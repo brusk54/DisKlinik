@@ -9,7 +9,6 @@ def init_db():
     conn = sqlite3.connect('klinik.db')
     cursor = conn.cursor()
     
-    # Hastalar Tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hastalar (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +23,6 @@ def init_db():
         )
     ''')
     
-    # Diş Tedavi ve İşlemler Tablosu (İnteraktif Diş Şeması için)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS dis_islemleri (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,11 +119,13 @@ ANASAYFA_HTML = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klinik360 - Diş Hasta Takip</title>
+    <title>Klinik360 - Profesyonel Diş Klinik Takip</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 10px; color: #333; }
         .container { max-width: 850px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        h1, h2 { color: #007bff; text-align: center; }
+        .logo-container { text-align: center; margin-bottom: 10px; }
+        .logo-container img { max-width: 260px; width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h2 { color: #007bff; text-align: center; }
         form { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
         .checkbox-group { background: white; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin: 8px 0; }
@@ -142,8 +142,12 @@ ANASAYFA_HTML = '''
 </head>
 <body>
     <div class="container">
-        <h1>🏥 Klinik360</h1>
-        <p style="text-align: center; color: #666; margin-top: -10px;">Profesyonel Diş Klinik Takip Sistemi</p>
+        <!-- Logo Alanı -->
+        <div class="logo-container">
+            <img src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80" alt="Klinik360 Logo">
+            <h2 style="margin: 10px 0 5px 0; color: #1e3d59;">Klinik360</h2>
+            <p style="color: #666; margin: 0; font-size: 14px;">Profesyonel Diş Klinik Takip Sistemi</p>
+        </div>
         
         <!-- Hasta Ekleme Formu -->
         <form action="/ekle" method="POST">
