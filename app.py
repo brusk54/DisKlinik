@@ -3,11 +3,11 @@ import sqlite3
 import os
 
 app = Flask(__name__)
-app.secret_key = 'klinik360_gizli_anahtar'  # Oturum güvenliği için
+app.secret_key = 'klinik360_gizli_anahtar'
 
 DOKTOR_SIFRE = "1234"  # Doktor paneli giriş şifresi
 
-# Veritabanı ve Tablolar
+# Veritabanı Kurulumu
 def init_db():
     conn = sqlite3.connect('klinik.db')
     cursor = conn.cursor()
@@ -41,7 +41,7 @@ def init_db():
 
 init_db()
 
-# Ana Sayfa / Portalı Karşılama
+# Portalı Karşılama
 @app.route('/')
 def index():
     return render_template_string(GIRIS_SECIM_HTML)
@@ -65,7 +65,7 @@ def doktor_cikis():
     session.pop('doktor_giris', None)
     return redirect(url_for('index'))
 
-# Doktor Yönetici Paneli
+# Doktor Yönetici Paneli & Takvim Görünümü
 @app.route('/doktor-panel')
 def doktor_panel():
     if not session.get('doktor_giris'):
@@ -81,10 +81,15 @@ def doktor_panel():
         cursor.execute("SELECT * FROM hastalar ORDER BY id DESC")
         
     hastalar = cursor.fetchall()
-    conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, arama=arama)
 
-# Hasta Kayıt (Doktor Tarafından)
+    # Randevu Takvimi Listesi (Randevu tarihi olanlar)
+    cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC")
+    randevular = cursor.fetchall()
+
+    conn.close()
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
+
+# Hasta Kayıt
 @app.route('/ekle', methods=['POST'])
 def ekle():
     if not session.get('doktor_giris'):
@@ -93,10 +98,8 @@ def ekle():
     ad_soyad = request.form['ad_soyad']
     telefon = request.form['telefon']
     yas = request.form['yas']
-    
     secilen_semptomlar = request.form.getlist('semptomlar')
     semptomlar_str = ", ".join(secilen_semptomlar) if secilen_semptomlar else "Belirtilmemiş"
-    
     ozel_not = request.form.get('ozel_not', '')
     alerji = request.form['alerji']
     randevu_tarihi = request.form['randevu_tarihi']
@@ -110,6 +113,64 @@ def ekle():
     conn.commit()
     conn.close()
     return redirect(url_for('doktor_panel'))
+
+# Hasta Düzenleme Sayfası ve Kayıt
+@app.route('/hasta-duzenle/<int:hasta_id>', methods=['GET', 'POST'])
+def hasta_duzenle(hasta_id):
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    conn = sqlite3.connect('klinik.db')
+    cursor = conn.cursor()
+
+    if request.method == 'POST':
+        ad_soyad = request.form['ad_soyad']
+        telefon = request.form['telefon']
+        yas = request.form['yas']
+        ozel_not = request.form['ozel_not']
+        alerji = request.form['alerji']
+        randevu_tarihi = request.form['randevu_tarihi']
+
+        cursor.execute('''
+            UPDATE hastalar 
+            SET ad_soyad=?, telefon=?, yas=?, ozel_not=?, alerji=?, randevu_tarihi=?
+            WHERE id=?
+        ''', (ad_soyad, telefon, yas, ozel_not, alerji, randevu_tarihi, hasta_id))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('doktor_panel'))
+
+    cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
+    hasta = cursor.fetchone()
+    conn.close()
+    return render_template_string(HASTA_DUZENLE_HTML, hasta=hasta)
+
+# Hasta Silme
+@app.route('/hasta-sil/<int:hasta_id>')
+def hasta_sil(hasta_id):
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    conn = sqlite3.connect('klinik.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
+    cursor.execute("DELETE FROM hastalar WHERE id = ?", (hasta_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('doktor_panel'))
+
+# Diş İşlemi Silme
+@app.route('/islem-sil/<int:islem_id>/<int:hasta_id>')
+def islem_sil(islem_id, hasta_id):
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    conn = sqlite3.connect('klinik.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM dis_islemleri WHERE id = ?", (islem_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('hasta_detay', hasta_id=hasta_id))
 
 # Doktor İçin Hasta Detay & Diş Şeması
 @app.route('/hasta-detay/<int:hasta_id>')
@@ -126,9 +187,6 @@ def hasta_detay(hasta_id):
     islemler = cursor.fetchall()
     conn.close()
     
-    if not hasta:
-        return "Hasta bulunamadı!", 404
-        
     return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
 
 # Diş İşlemi Ekleme
@@ -151,7 +209,19 @@ def dis_islem_ekle(hasta_id):
     conn.close()
     return redirect(url_for('hasta_detay', hasta_id=hasta_id))
 
-# HASTA TARAFI: Hasta Giriş & Takip Paneli
+# PDF / Reçete & Tedavi Rapor Çıktı Ekranı
+@app.route('/hasta-rapor/<int:hasta_id>')
+def hasta_rapor(hasta_id):
+    conn = sqlite3.connect('klinik.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
+    hasta = cursor.fetchone()
+    cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
+    islemler = cursor.fetchall()
+    conn.close()
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler)
+
+# HASTA TARAFI: Giriş
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
     hata = None
@@ -166,12 +236,12 @@ def hasta_giris():
             session['hasta_id'] = hasta[0]
             return redirect(url_for('hasta_profil'))
         else:
-            hata = "Bu telefon numarasına ait kayıt bulunamadı. Lütfen kliniğimiz ile iletişime geçin."
+            hata = "Bu telefon numarasına ait kayıt bulunamadı."
         conn.close()
         
     return render_template_string(HASTA_GIRIS_HTML, hata=hata)
 
-# HASTA TARAFI: Profil ve Tedavi Görüntüleme
+# HASTA TARAFI: Profil
 @app.route('/hasta-profil')
 def hasta_profil():
     hasta_id = session.get('hasta_id')
@@ -182,14 +252,12 @@ def hasta_profil():
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
     hasta = cursor.fetchone()
-    
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    
     return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
 
-# --- TEMPLATE HTML KODLARI ---
+# --- TEMPLATES ---
 
 GIRIS_SECIM_HTML = '''
 <!DOCTYPE html>
@@ -204,9 +272,7 @@ GIRIS_SECIM_HTML = '''
         .logo { max-width: 240px; width: 100%; border-radius: 8px; margin-bottom: 15px; }
         .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; }
         .btn-doktor { background: #007bff; }
-        .btn-doktor:hover { background: #0056b3; }
         .btn-hasta { background: #28a745; }
-        .btn-hasta:hover { background: #218838; }
     </style>
 </head>
 <body>
@@ -233,18 +299,17 @@ DOKTOR_GIRIS_HTML = '''
         .box { max-width: 380px; margin: 60px auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; text-align: center; font-size: 16px; }
         button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
-        .error { color: red; margin-bottom: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="box">
         <h2>🔐 Doktor Girişi</h2>
-        {% if hata %}<p class="error">{{ hata }}</p>{% endif %}
+        {% if hata %}<p style="color:red;">{{ hata }}</p>{% endif %}
         <form method="POST">
             <input type="password" name="sifre" placeholder="Doktor Giriş Şifresi" required>
             <button type="submit">Giriş Yap</button>
         </form>
-        <br><a href="/" style="color: #666; text-decoration: none; font-size: 14px;">⬅ Ana Sayfaya Dön</a>
+        <br><a href="/" style="color: #666; text-decoration: none;">⬅ Ana Sayfa</a>
     </div>
 </body>
 </html>
@@ -259,35 +324,52 @@ DOKTOR_PANEL_HTML = '''
     <title>Yönetici Paneli - Klinik360</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 10px; color: #333; }
-        .container { max-width: 850px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
-        .logo-container img { max-width: 180px; }
+        .logo-container img { max-width: 160px; }
+        .takvim-box { background: #e3f2fd; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
         form { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
         .checkbox-group { background: white; padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin: 8px 0; }
         .checkbox-group label { display: block; margin-bottom: 5px; cursor: pointer; }
         button { background: #28a745; color: white; border: none; padding: 12px; width: 100%; border-radius: 5px; font-size: 16px; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 13px; }
         th { background: #007bff; color: white; }
-        .search-box { display: flex; gap: 10px; margin-bottom: 15px; }
-        .whatsapp-btn { background: #25d366; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; display: inline-block; font-size: 13px; }
-        .detay-btn { background: #17a2b8; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; display: inline-block; font-size: 13px; margin-right: 5px; }
-        .cikis-btn { background: #dc3545; color: white; padding: 6px 12px; text-decoration: none; border-radius: 5px; font-size: 13px; }
+        .btn-sm { padding: 4px 8px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; margin: 2px; }
+        .btn-info { background: #17a2b8; color: white; }
+        .btn-wa { background: #25d366; color: white; }
+        .btn-edit { background: #ffc107; color: #000; }
+        .btn-del { background: #dc3545; color: white; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <div class="logo-container">
-                <img src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80" alt="Klinik360 Logo">
+                <img src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80" alt="Logo">
             </div>
             <div>
                 <span style="font-weight: bold; color: #007bff;">👩‍⚕️ Doktor Paneli</span>
-                <a href="/doktor-cikis" class="cikis-btn" style="margin-left: 10px;">Çıkış</a>
+                <a href="/doktor-cikis" style="background:#dc3545; color:white; padding:6px 12px; text-decoration:none; border-radius:5px; margin-left:10px;">Çıkış</a>
             </div>
         </div>
 
+        <!-- 📆 Randevu Takvimi Alanı -->
+        <div class="takvim-box">
+            <h3 style="margin-top:0; color:#0056b3;">📆 Yaklaşan Randevu Takvimi</h3>
+            {% if randevular %}
+                <ul style="margin:0; padding-left:20px;">
+                {% for r in randevular %}
+                    <li><b>{{ r[3] }}</b> - {{ r[1] }} (Tel: {{ r[2] }})</li>
+                {% endfor %}
+                </ul>
+            {% else %}
+                <p style="margin:0; color:gray;">Planlanmış randevu bulunmamaktadır.</p>
+            {% endif %}
+        </div>
+
+        <!-- Yeni Hasta Ekleme Formu -->
         <form action="/ekle" method="POST">
             <h3>Yeni Hasta Kaydı</h3>
             <input type="text" name="ad_soyad" placeholder="Hasta Adı Soyadı" required>
@@ -296,23 +378,21 @@ DOKTOR_PANEL_HTML = '''
             
             <label><b>Semptomlar ve Şikayetler:</b></label>
             <div class="checkbox-group">
-                <label><input type="checkbox" name="semptomlar" value="Şiddetli Ağrı (Apse Şüphesi)"> Şiddetli Ağrı (Apse Şüphesi)</label>
+                <label><input type="checkbox" name="semptomlar" value="Şiddetli Ağrı (Apse)"> Şiddetli Ağrı (Apse)</label>
                 <label><input type="checkbox" name="semptomlar" value="Hassasiyet (Sıcak/Soğuk)"> Hassasiyet (Sıcak/Soğuk)</label>
-                <label><input type="checkbox" name="semptomlar" value="Diş Eti Kanaması / Şişliği"> Diş Eti Kanaması / Şişliği</label>
+                <label><input type="checkbox" name="semptomlar" value="Diş Eti Kanaması"> Diş Eti Kanaması</label>
                 <label><input type="checkbox" name="semptomlar" value="Çürük / Kırık Diş"> Çürük / Kırık Diş</label>
-                <label><input type="checkbox" name="semptomlar" value="Estetik / Dolgu / Beyazlatma"> Estetik / Dolgu / Beyazlatma</label>
-                <label><input type="checkbox" name="semptomlar" value="Diş Gıcırdatma (Bruksizm)"> Diş Gıcırdatma (Bruksizm)</label>
+                <label><input type="checkbox" name="semptomlar" value="Estetik / Dolgu"> Estetik / Dolgu</label>
             </div>
 
-            <textarea name="ozel_not" placeholder="Özel Not / Doktor Açıklaması..." rows="3"></textarea>
+            <textarea name="ozel_not" placeholder="Özel Not / Doktor Açıklaması..." rows="2"></textarea>
             <input type="text" name="alerji" placeholder="Alerji Durumu (Varsa)">
             <input type="date" name="randevu_tarihi">
             <button type="submit">Hastayı Kaydet</button>
         </form>
 
-        <form class="search-box" method="GET" action="/doktor-panel">
+        <form method="GET" action="/doktor-panel" style="background:none; padding:0;">
             <input type="text" name="arama" placeholder="İsim veya telefon ile hasta ara..." value="{{ arama }}">
-            <button type="submit" style="width: 120px; margin:0;">Ara</button>
         </form>
 
         <h2>Kayıtlı Hastalar</h2>
@@ -320,9 +400,9 @@ DOKTOR_PANEL_HTML = '''
             <tr>
                 <th>Ad Soyad</th>
                 <th>Telefon</th>
-                <th>Semptomlar & Not</th>
+                <th>Semptom & Not</th>
                 <th>Randevu</th>
-                <th>İşlemler / İletişim</th>
+                <th>İşlemler</th>
             </tr>
             {% for h in hastalar %}
             <tr>
@@ -331,16 +411,55 @@ DOKTOR_PANEL_HTML = '''
                 <td>
                     <b>Semptom:</b> {{ h[4] }}<br>
                     {% if h[5] %}<b>Not:</b> {{ h[5] }}<br>{% endif %}
-                    <small style="color: gray;">Alerji: {{ h[6] }}</small>
                 </td>
                 <td>{{ h[7] }}</td>
                 <td>
-                    <a class="detay-btn" href="/hasta-detay/{{ h[0] }}">Diş Şeması & İşlem</a>
-                    <a class="whatsapp-btn" href="https://wa.me/9{{ h[2] }}?text=Sayın%20{{ h[1] }},%20Klinik360%20diş%20kliniğimizdeki%20{{ h[7] }}%20tarihli%20randevunuzu%20hatırlatmak%20isteriz.%20Sağlıklı%20günler%20dileriz." target="_blank">WhatsApp</a>
+                    <a class="btn-sm btn-info" href="/hasta-detay/{{ h[0] }}">Diş Kartı</a>
+                    <a class="btn-sm btn-wa" href="https://wa.me/9{{ h[2] }}?text=Sayın%20{{ h[1] }},%20Klinik360%20randevunuzu%20hatırlatırız." target="_blank">WhatsApp</a>
+                    <a class="btn-sm btn-edit" href="/hasta-duzenle/{{ h[0] }}">Düzenle</a>
+                    <a class="btn-sm btn-del" href="/hasta-sil/{{ h[0] }}" onclick="return confirm('Bu hastayı ve tüm tedavilerini silmek istediğinize emin misiniz?')">Sil</a>
                 </td>
             </tr>
             {% endfor %}
         </table>
+    </div>
+</body>
+</html>
+'''
+
+HASTA_DUZENLE_HTML = '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hasta Düzenle - Klinik360</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 20px; }
+        .box { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        input, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        button { background: #28a745; color: white; border: none; padding: 12px; width: 100%; border-radius: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>✏️ Hasta Bilgilerini Düzenle</h2>
+        <form method="POST">
+            <label>Ad Soyad:</label>
+            <input type="text" name="ad_soyad" value="{{ hasta[1] }}" required>
+            <label>Telefon:</label>
+            <input type="text" name="telefon" value="{{ hasta[2] }}" required>
+            <label>Yaş:</label>
+            <input type="number" name="yas" value="{{ hasta[3] }}">
+            <label>Doktor Notu:</label>
+            <textarea name="ozel_not" rows="3">{{ hasta[5] }}</textarea>
+            <label>Alerji:</label>
+            <input type="text" name="alerji" value="{{ hasta[6] }}">
+            <label>Randevu Tarihi:</label>
+            <input type="date" name="randevu_tarihi" value="{{ hasta[7] }}">
+            <button type="submit">GÜNCELLE</button>
+        </form>
+        <br><a href="/doktor-panel" style="color:gray;">İptal</a>
     </div>
 </body>
 </html>
@@ -354,75 +473,53 @@ HASTA_DETAY_HTML = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ hasta[1] }} - Diş Kartı | Klinik360</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 10px; color: #333; }
+        body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 10px; }
         .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .info-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
         form { background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
         input, select { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
-        button { background: #007bff; color: white; border: none; padding: 12px; width: 100%; border-radius: 5px; font-size: 16px; cursor: pointer; }
+        button { background: #007bff; color: white; border: none; padding: 12px; width: 100%; border-radius: 5px; cursor: pointer; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background: #28a745; color: white; }
-        .back-btn { background: #6c757d; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; display: inline-block; margin-bottom: 15px; }
+        .btn-pdf { background: #17a2b8; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; float: right; }
     </style>
 </head>
 <body>
     <div class="container">
-        <a class="back-btn" href="/doktor-panel">⬅ Doktor Paneline Dön</a>
-        <h1>🦷 Hasta Diş Kartı & Tedaviler</h1>
+        <a href="/doktor-panel" style="background:#6c757d; color:white; padding:8px 12px; text-decoration:none; border-radius:5px;">⬅ Geri</a>
+        <a class="btn-pdf" href="/hasta-rapor/{{ hasta[0] }}" target="_blank">📄 PDF / Reçete Çıktısı Al</a>
+        
+        <h1 style="color:#007bff;">🦷 Hasta Diş Kartı</h1>
         
         <div class="info-box">
             <h3>{{ hasta[1] }}</h3>
             <p><b>Telefon:</b> {{ hasta[2] }} | <b>Yaş:</b> {{ hasta[3] }}</p>
             <p><b>Semptomlar:</b> {{ hasta[4] }}</p>
             <p><b>Doktor Notu:</b> {{ hasta[5] }}</p>
-            <p><b>Randevu Tarihi:</b> {{ hasta[7] }}</p>
         </div>
 
         <form action="/dis_islem_ekle/{{ hasta[0] }}" method="POST">
             <h3>Diş Tedavisi / İşlem Ekle</h3>
             <select name="dis_no" required>
                 <option value="">-- Diş Seçiniz (ISO Numarası) --</option>
-                <optgroup label="Üst Çene Sağ">
-                    <option value="11">11 - Sağ Üst Kesici</option>
-                    <option value="12">12 - Sağ Üst Yan Kesici</option>
-                    <option value="13">13 - Sağ Üst Köpek</option>
-                    <option value="14">14 - Sağ Üst 1. Küçük Azı</option>
-                    <option value="15">15 - Sağ Üst 2. Küçük Azı</option>
-                    <option value="16">16 - Sağ Üst 1. Büyük Azı</option>
-                    <option value="17">17 - Sağ Üst 2. Büyük Azı</option>
-                    <option value="18">18 - Sağ Üst 20 Yaş Dişi</option>
-                </optgroup>
-                <optgroup label="Üst Çene Sol">
-                    <option value="21">21 - Sol Üst Kesici</option>
-                    <option value="22">22 - Sol Üst Yan Kesici</option>
-                    <option value="23">23 - Sol Üst Köpek</option>
-                    <option value="24">24 - Sol Üst 1. Küçük Azı</option>
-                    <option value="25">25 - Sol Üst 2. Küçük Azı</option>
-                    <option value="26">26 - Sol Üst 1. Büyük Azı</option>
-                    <option value="27">27 - Sol Üst 2. Büyük Azı</option>
-                    <option value="28">28 - Sol Üst 20 Yaş Dişi</option>
-                </optgroup>
-                <optgroup label="Alt Çene Sol">
-                    <option value="31">31 - Sol Alt Kesici</option>
-                    <option value="32">32 - Sol Alt Yan Kesici</option>
-                    <option value="33">33 - Sol Alt Köpek</option>
-                    <option value="34">34 - Sol Alt 1. Küçük Azı</option>
-                    <option value="35">35 - Sol Alt 2. Küçük Azı</option>
-                    <option value="36">36 - Sol Alt 1. Büyük Azı</option>
-                    <option value="37">37 - Sol Alt 2. Büyük Azı</option>
-                    <option value="38">38 - Sol Alt 20 Yaş Dişi</option>
-                </optgroup>
-                <optgroup label="Alt Çene Sağ">
-                    <option value="41">41 - Sağ Alt Kesici</option>
-                    <option value="42">42 - Sağ Alt Yan Kesici</option>
-                    <option value="43">43 - Sağ Alt Köpek</option>
-                    <option value="44">44 - Sağ Alt 1. Küçük Azı</option>
-                    <option value="45">45 - Sağ Alt 2. Küçük Azı</option>
-                    <option value="46">46 - Sağ Alt 1. Büyük Azı</option>
-                    <option value="47">47 - Sağ Alt 2. Büyük Azı</option>
-                    <option value="48">48 - Sağ Alt 20 Yaş Dişi</option>
-                </optgroup>
+                <option value="11">11 - Sağ Üst Kesici</option>
+                <option value="12">12 - Sağ Üst Yan Kesici</option>
+                <option value="13">13 - Sağ Üst Köpek</option>
+                <option value="14">14 - Sağ Üst 1. Küçük Azı</option>
+                <option value="15">15 - Sağ Üst 2. Küçük Azı</option>
+                <option value="16">16 - Sağ Üst 1. Büyük Azı</option>
+                <option value="17">17 - Sağ Üst 2. Büyük Azı</option>
+                <option value="21">21 - Sol Üst Kesici</option>
+                <option value="22">22 - Sol Üst Yan Kesici</option>
+                <option value="23">23 - Sol Üst Köpek</option>
+                <option value="24">24 - Sol Üst 1. Küçük Azı</option>
+                <option value="25">25 - Sol Üst 2. Küçük Azı</option>
+                <option value="26">26 - Sol Üst 1. Büyük Azı</option>
+                <option value="31">31 - Sol Alt Kesici</option>
+                <option value="36">36 - Sol Alt 1. Büyük Azı</option>
+                <option value="41">41 - Sağ Alt Kesici</option>
+                <option value="46">46 - Sağ Alt 1. Büyük Azı</option>
             </select>
 
             <select name="islem_turu" required>
@@ -433,11 +530,10 @@ HASTA_DETAY_HTML = '''
                 <option value="Diş Taşı Temizliği">Diş Taşı Temizliği (Detartraj)</option>
                 <option value="Kron / Kaplama">Kron / Porselen Kaplama</option>
                 <option value="İmplant">İmplant</option>
-                <option value="Diş Beyazlatma">Diş Beyazlatma (Bleaching)</option>
             </select>
 
             <input type="number" step="0.01" name="ucret" placeholder="İşlem Ücreti (TL)" required>
-            <button type="submit">Diş İşlemini Kaydet</button>
+            <button type="submit">İşlemi Kaydet</button>
         </form>
 
         <h2>Uygulanan Diş Tedavileri</h2>
@@ -446,15 +542,73 @@ HASTA_DETAY_HTML = '''
                 <th>Diş No</th>
                 <th>Yapılan İşlem</th>
                 <th>Ücret</th>
+                <th>Eylem</th>
             </tr>
             {% for i in islemler %}
             <tr>
                 <td><b>Diş #{{ i[2] }}</b></td>
                 <td>{{ i[3] }}</td>
                 <td>{{ i[4] }} TL</td>
+                <td><a href="/islem-sil/{{ i[0] }}/{{ hasta[0] }}" style="color:red; text-decoration:none;" onclick="return confirm('Bu işlemi silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
             </tr>
             {% endfor %}
         </table>
+    </div>
+</body>
+</html>
+'''
+
+HASTA_RAPOR_HTML = '''
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ hasta[1] }} - Tedavi Raporu</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; color: #333; }
+        .header { text-align: center; border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-bottom: 30px; }
+        .logo { max-width: 150px; }
+        .box { background: #f9f9f9; padding: 15px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+        th { background: #eee; }
+        .print-btn { background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-bottom: 20px; }
+        @media print { .print-btn { display: none; } }
+    </style>
+</head>
+<body>
+    <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır / PDF İndir</button>
+    
+    <div class="header">
+        <img class="logo" src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80">
+        <h2>KLİNİK360 DİŞ SAĞLIĞI & TEDAVİ RAPORU</h2>
+    </div>
+
+    <div class="box">
+        <h3>Hasta Bilgileri</h3>
+        <p><b>Adı Soyadı:</b> {{ hasta[1] }} | <b>Telefon:</b> {{ hasta[2] }} | <b>Yaş:</b> {{ hasta[3] }}</p>
+        <p><b>Alerji / Özel Durum:</b> {{ hasta[6] if hasta[6] else 'Yok' }}</p>
+        <p><b>Doktor Notu:</b> {{ hasta[5] }}</p>
+    </div>
+
+    <h3>Uygulanan Tedaviler</h3>
+    <table>
+        <tr>
+            <th>Diş No (ISO)</th>
+            <th>Tedavi Açıklaması</th>
+        </tr>
+        {% for i in islemler %}
+        <tr>
+            <td>Diş #{{ i[2] }}</td>
+            <td>{{ i[3] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <br><br><br>
+    <div style="float: right; text-align: center;">
+        <p><b>Hekim İmza / Kaşe</b></p>
+        <p>.......................................</p>
     </div>
 </body>
 </html>
@@ -470,21 +624,19 @@ HASTA_GIRIS_HTML = '''
     <style>
         body { font-family: Arial, sans-serif; background: #e9ecef; margin: 0; padding: 20px; text-align: center; }
         .box { max-width: 400px; margin: 50px auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; text-align: center; font-size: 16px; }
+        input { width: 100%; padding: 12px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; text-align: center; font-size: 16px; box-sizing: border-box; }
         button { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; }
-        .error { color: red; margin-bottom: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h2>📱 Hasta Tedavi & Randevu Takibi</h2>
-        <p style="color: #666; font-size: 14px;">Randevu ve tedavi geçmişinizi görüntülemek için kayıtlı telefon numaranızı giriniz.</p>
-        {% if hata %}<p class="error">{{ hata }}</p>{% endif %}
+        <h2>📱 Hasta Randevu & Tedavi Takibi</h2>
+        {% if hata %}<p style="color:red;">{{ hata }}</p>{% endif %}
         <form method="POST">
             <input type="text" name="telefon" placeholder="Telefon Numarası (Örn: 0555...)" required>
             <button type="submit">Randevumu Göster</button>
         </form>
-        <br><a href="/" style="color: #666; text-decoration: none; font-size: 14px;">⬅ Ana Sayfaya Dön</a>
+        <br><a href="/" style="color: #666; text-decoration: none;">⬅ Ana Sayfa</a>
     </div>
 </body>
 </html>
@@ -498,22 +650,21 @@ HASTA_PROFIL_HTML = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hasta Paneli - Klinik360</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 10px; color: #333; }
+        body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 10px; }
         .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .card { background: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #007bff; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background: #007bff; color: white; }
-        .back-btn { background: #6c757d; color: white; padding: 8px 15px; text-decoration: none; border-radius: 5px; display: inline-block; margin-bottom: 15px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <a class="back-btn" href="/">⬅ Çıkış Yap</a>
+        <a href="/" style="background:#6c757d; color:white; padding:8px 12px; text-decoration:none; border-radius:5px;">⬅ Çıkış</a>
         <h2>🦷 Klinik360 Hasta Bilgi Kartı</h2>
         
         <div class="card">
-            <h3 style="margin-top:0;">Sayın {{ hasta[1] }}</h3>
+            <h3>Sayın {{ hasta[1] }}</h3>
             <p><b>🗓 Yaklaşan Randevu Tarihiniz:</b> <span style="color: #d9534f; font-weight: bold;">{{ hasta[7] if hasta[7] else 'Planlanmış Randevu Yok' }}</span></p>
             <p><b>👨‍⚕️ Doktorunuzun Notu:</b> {{ hasta[5] if hasta[5] else 'Ek not yok.' }}</p>
         </div>
