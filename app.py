@@ -7,9 +7,6 @@ app.secret_key = 'klinik360_gizli_anahtar'
 
 DOKTOR_SIFRE = "1234"
 
-# Kurumsal Şık Diş Logomuz
-LOGO_URL = "https://images.unsplash.com/photo-1606811841689-23dfddce6395?auto=format&fit=crop&w=500&q=80"
-
 def get_db():
     conn = sqlite3.connect('klinik.db')
     conn.row_factory = sqlite3.Row
@@ -67,7 +64,7 @@ init_db()
 
 @app.route('/')
 def index():
-    return render_template_string(GIRIS_SECIM_HTML, logo=LOGO_URL)
+    return render_template_string(GIRIS_SECIM_HTML)
 
 @app.route('/doktor-giris', methods=['GET', 'POST'])
 def doktor_giris():
@@ -106,7 +103,7 @@ def doktor_panel():
     randevular = cursor.fetchall()
 
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, logo=LOGO_URL)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -203,7 +200,7 @@ def hasta_detay(hasta_id):
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -233,7 +230,7 @@ def hasta_rapor(hasta_id):
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -252,7 +249,7 @@ def hasta_giris():
         else:
             hata = "Girdiğiniz bilgilere ait kayıt bulunamadı."
         conn.close()
-    return render_template_string(HASTA_GIRIS_HTML, hata=hata, logo=LOGO_URL)
+    return render_template_string(HASTA_GIRIS_HTML, hata=hata)
 
 @app.route('/hasta-profil')
 def hasta_profil():
@@ -267,9 +264,16 @@ def hasta_profil():
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
 
-# --- HTML TEMPLATES ---
+# --- MODERN HTML TEMPLATES (CSS Logo Destekli) ---
+
+LOGO_HTML = '''
+<div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg, #007bff, #00d2ff); padding: 12px 24px; border-radius: 50px; color: white; box-shadow: 0 4px 15px rgba(0,123,255,0.3); margin-bottom: 15px;">
+    <span style="font-size: 28px;">🦷</span>
+    <span style="font-size: 22px; font-weight: bold; letter-spacing: 1px;">Klinik360</span>
+</div>
+'''
 
 GIRIS_SECIM_HTML = '''
 <!DOCTYPE html>
@@ -280,17 +284,18 @@ GIRIS_SECIM_HTML = '''
     <title>Klinik360 Portalı</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; text-align: center; color: #333; }
-        .box { max-width: 450px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .logo { max-width: 220px; width: 100%; height: auto; border-radius: 8px; margin-bottom: 15px; object-fit: contain; }
-        .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; }
+        .box { max-width: 450px; margin: 60px auto; background: white; padding: 40px 30px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+        .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; transition: 0.2s; }
         .btn-doktor { background: #007bff; }
+        .btn-doktor:hover { background: #0056b3; }
         .btn-hasta { background: #28a745; }
+        .btn-hasta:hover { background: #218838; }
     </style>
 </head>
 <body>
     <div class="box">
-        <img class="logo" src="{{ logo }}" alt="Klinik360 Logo">
-        <h2>Klinik360 Portalı</h2>
+        ''' + LOGO_HTML + '''
+        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
@@ -302,16 +307,17 @@ DOKTOR_GIRIS_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
 <head><meta charset="UTF-8"><title>Doktor Girişi</title>
-<style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:380px;margin:60px auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer}</style></head>
+<style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:380px;margin:80px auto;background:white;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
 <body>
 <div class="box">
-    <h2>🔐 Doktor Girişi</h2>
-    {% if hata %}<p style="color:red;">{{ hata }}</p>{% endif %}
+    ''' + LOGO_HTML + '''
+    <h2>Doktor Girişi</h2>
+    {% if hata %}<p style="color:red; font-size:14px;">{{ hata }}</p>{% endif %}
     <form method="POST">
         <input type="password" name="sifre" placeholder="Şifre (1234)" required>
         <button type="submit">Giriş Yap</button>
     </form>
-    <br><a href="/" style="color:#666;text-decoration:none;">⬅ Ana Sayfa</a>
+    <br><a href="/" style="color:#666;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
 </div>
 </body></html>
 '''
@@ -322,26 +328,29 @@ DOKTOR_PANEL_HTML = '''
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli</title>
 <style>
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
-.container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}
-.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:15px}
-.logo-container img{max-width:140px; height:auto;}
-.takvim-box{background:#e3f2fd;padding:12px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
-form{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}
+.container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px}
+.takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
+form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
 .checkbox-group{background:white;padding:10px;border-radius:5px;border:1px solid #ccc;margin:8px 0}
 .checkbox-group label{display:block;margin-bottom:5px;cursor:pointer}
 button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}
 table{width:100%;border-collapse:collapse;margin-top:15px}
-th,td{border:1px solid #ddd;padding:8px;text-align:left;font-size:13px}
+th,td{border:1px solid #ddd;padding:10px;text-align:left;font-size:13px}
 th{background:#007bff;color:white}
-.btn-sm{padding:4px 8px;text-decoration:none;border-radius:4px;font-size:12px;display:inline-block;margin:2px}
+.btn-sm{padding:5px 10px;text-decoration:none;border-radius:4px;font-size:12px;display:inline-block;margin:2px}
 .btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
 </style></head>
 <body>
 <div class="container">
     <div class="header">
-        <div class="logo-container"><img src="{{ logo }}" alt="Klinik360 Logo"></div>
-        <div><span>👩‍⚕️ Doktor Paneli</span> <a href="/doktor-cikis" style="background:#dc3545;color:white;padding:6px 12px;text-decoration:none;border-radius:5px;margin-left:10px;">Çıkış</a></div>
+        <div>
+            <span style="font-size: 20px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 13px; color: #666;">| Doktor Paneli</span>
+        </div>
+        <div>
+            <a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a>
+        </div>
     </div>
 
     <div class="takvim-box">
@@ -358,7 +367,7 @@ th{background:#007bff;color:white}
     </div>
 
     <form action="/ekle" method="POST">
-        <h3>Yeni Hasta Kaydı</h3>
+        <h3 style="margin-top:0; color:#007bff;">Yeni Hasta Kaydı</h3>
         <input type="text" name="ad_soyad" placeholder="Hasta Adı Soyadı" required>
         <input type="text" name="telefon" placeholder="Telefon Numarası (0555...)" required>
         <input type="text" name="tc_no" placeholder="TC Kimlik Numarası (11 Haneli)" maxlength="11">
@@ -383,7 +392,7 @@ th{background:#007bff;color:white}
     </form>
 
     <form method="GET" action="/doktor-panel" style="background:none;padding:0;">
-        <input type="text" name="arama" placeholder="İsim, telefon veya TC No ile ara..." value="{{ arama }}">
+        <input type="text" name="arama" placeholder="🔍 İsim, telefon veya TC No ile ara..." value="{{ arama }}">
     </form>
 
     <h2>Kayıtlı Hastalar</h2>
@@ -415,9 +424,9 @@ th{background:#007bff;color:white}
 HASTA_DUZENLE_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Düzenle</title><style>body{font-family:Arial;padding:20px;background:#f4f7f6}.box{max-width:500px;margin:auto;background:white;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}input,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer}</style></head>
+<head><meta charset="UTF-8"><title>Düzenle</title><style>body{font-family:Arial;padding:20px;background:#f4f7f6}.box{max-width:500px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}input,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}</style></head>
 <body><div class="box">
-    <h2>✏️ Hasta Bilgilerini Düzenle</h2>
+    <h2 style="color:#007bff; margin-top:0;">✏️ Hasta Bilgilerini Düzenle</h2>
     <form method="POST">
         <label>Ad Soyad:</label><input type="text" name="ad_soyad" value="{{ hasta['ad_soyad'] }}" required>
         <label>Telefon:</label><input type="text" name="telefon" value="{{ hasta['telefon'] }}" required>
@@ -429,16 +438,16 @@ HASTA_DUZENLE_HTML = '''
         <label>Randevu Tarihi:</label><input type="date" name="randevu_tarihi" value="{{ hasta['randevu_tarihi'] or '' }}">
         <button type="submit">GÜNCELLE</button>
     </form>
-    <br><a href="/doktor-panel" style="color:gray;">İptal</a>
+    <br><a href="/doktor-panel" style="color:gray;text-decoration:none;">⬅ İptal</a>
 </div></body></html>
 '''
 
 HASTA_DETAY_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Diş Kartı</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:800px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#28a745;color:white}.btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right}</style></head>
+<head><meta charset="UTF-8"><title>Diş Kartı</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:800px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#28a745;color:white}.btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right}</style></head>
 <body><div class="container">
-    <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:5px;">⬅ Geri</a>
+    <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Geri</a>
     <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete Çıktısı Al</a>
     <h1 style="color:#007bff;">🦷 Hasta Diş Kartı</h1>
     <div class="info-box">
@@ -450,7 +459,7 @@ HASTA_DETAY_HTML = '''
         <p><b>Alerji:</b> {{ hasta['alerji'] or 'Yok' }}</p>
     </div>
     <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
-        <h3>Diş Tedavisi / İşlem Ekle</h3>
+        <h3 style="margin-top:0; color:#007bff;">Diş Tedavisi / İşlem Ekle</h3>
         <select name="dis_no" required>
             <option value="">-- Diş Seçiniz (ISO Numarası) --</option>
             <option value="11">11 - Sağ Üst Kesici</option>
@@ -499,12 +508,12 @@ HASTA_DETAY_HTML = '''
 HASTA_RAPOR_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Rapor</title><style>body{font-family:Arial;padding:40px;color:#333}.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:30px}.logo{max-width:130px; height:auto;}.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}@media print{.print-btn{display:none}}</style></head>
+<head><meta charset="UTF-8"><title>Rapor</title><style>body{font-family:Arial;padding:40px;color:#333}.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:30px}.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}@media print{.print-btn{display:none}}</style></head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır / PDF İndir</button>
 <div class="header">
-    <img class="logo" src="{{ logo }}" alt="Klinik360 Logo">
-    <h2>KLİNİK360 DİŞ SAĞLIĞI & TEDAVİ RAPORU</h2>
+    <h1 style="color: #007bff; margin: 0;">🦷 Klinik360</h1>
+    <h2>DİŞ SAĞLIĞI & TEDAVİ RAPORU</h2>
 </div>
 <div class="box">
     <h3>Hasta Bilgileri</h3>
@@ -526,17 +535,18 @@ HASTA_RAPOR_HTML = '''
 HASTA_GIRIS_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Hasta Girişi</title><style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:400px;margin:50px auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box}button{width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;cursor:pointer}</style></head>
+<head><meta charset="UTF-8"><title>Hasta Girişi</title><style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:400px;margin:60px auto;background:white;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
 <body>
 <div class="box">
-    <h2>📱 Hasta Takip</h2>
-    <p style="color:#666; font-size:13px;">Telefon numaranız veya TC Kimlik numaranız ile giriş yapabilirsiniz.</p>
-    {% if hata %}<p style="color:red;">{{ hata }}</p>{% endif %}
+    ''' + LOGO_HTML + '''
+    <h2>Hasta Takip Paneli</h2>
+    <p style="color:#666; font-size:14px;">Telefon numaranız veya TC Kimlik numaranız ile giriş yapabilirsiniz.</p>
+    {% if hata %}<p style="color:red; font-size:14px;">{{ hata }}</p>{% endif %}
     <form method="POST">
         <input type="text" name="girdi" placeholder="Telefon veya TC Kimlik No" required>
         <button type="submit">Randevumu Göster</button>
     </form>
-    <br><a href="/" style="color:#666;text-decoration:none;">⬅ Ana Sayfa</a>
+    <br><a href="/" style="color:#666;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
 </div>
 </body></html>
 '''
@@ -544,13 +554,13 @@ HASTA_GIRIS_HTML = '''
 HASTA_PROFIL_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Hasta Paneli</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}.card{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#007bff;color:white}</style></head>
+<head><meta charset="UTF-8"><title>Hasta Paneli</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.card{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#007bff;color:white}</style></head>
 <body>
 <div class="container">
-    <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:5px;">⬅ Çıkış</a>
-    <h2>🦷 Klinik360 Hasta Bilgi Kartı</h2>
+    <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Çıkış</a>
+    <h2 style="color:#007bff;">🦷 Klinik360 Hasta Bilgi Kartı</h2>
     <div class="card">
-        <h3>Sayın {{ hasta['ad_soyad'] }}</h3>
+        <h3 style="margin-top:0;">Sayın {{ hasta['ad_soyad'] }}</h3>
         <p><b>TC No:</b> {{ hasta['tc_no'] or '-' }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }}</p>
         <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
         <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
