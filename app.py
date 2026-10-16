@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session, send_from_directory, abort
+from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import os
 import urllib.parse
@@ -347,28 +347,6 @@ def foto_sil(foto_id, hasta_id):
             os.remove(dosya_yolu)
     execute_query("DELETE FROM hasta_fotolar WHERE id = ? AND klinik_id = ?", (foto_id, klinik_id), commit=True)
     return redirect(url_for('hasta_detay', hasta_id=hasta_id))
-
-@app.route('/foto-goster/<int:foto_id>')
-def foto_goster(foto_id):
-    foto = execute_query("SELECT * FROM hasta_fotolar WHERE id = ?", (foto_id,), fetchone=True)
-    if not foto:
-        return abort(404)
-    
-    doktor_rol = session.get('kullanici_rolu')
-    giris_yapan_hasta_id = session.get('hasta_id')
-    
-    if doktor_rol:
-        klinik_id = session.get('klinik_id', 1)
-        if foto['klinik_id'] != klinik_id:
-            return abort(403)
-    elif giris_yapan_hasta_id:
-        if foto['hasta_id'] != giris_yapan_hasta_id:
-            return abort(403)
-    else:
-        return redirect(url_for('index'))
-        
-    guvenli_dosya = os.path.basename(foto['dosya_adi'])
-    return send_from_directory(app.config['UPLOAD_FOLDER'], guvenli_dosya)
 
 @app.route('/hasta-detay/<int:hasta_id>')
 def hasta_detay(hasta_id):
@@ -801,7 +779,7 @@ function fiyatGetir() {
         {% for f in fotolar %}
         <div class="photo-card">
             <span style="font-size:12px; font-weight:bold; color: {% if f['tip'] == 'once' %}#dc3545{% else %}#28a745{% endif %};">{{ 'Tedavi Öncesi' if f['tip'] == 'once' else 'Tedavi Sonrası' }}</span>
-            <a href="{{ url_for('foto_goster', foto_id=f['id']) }}" target="_blank"><img src="{{ url_for('foto_goster', foto_id=f['id']) }}" alt="Fotoğraf"></a>
+            <a href="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" target="_blank"><img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" alt="Fotoğraf"></a>
             <br>
             {% if rol == 'doktor' %}<a href="/foto-sil/{{ f['id'] }}/{{ hasta['id'] }}" style="color:red; font-size:12px; text-decoration:none;" onclick="return confirm('Fotoğrafı silmek istiyor musunuz?')">🗑️ Sil</a>{% endif %}
         </div>
@@ -854,7 +832,7 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee; colo
 <h3>Tedavi Fotoğrafları</h3>
 <div class="gallery">
     {% for f in fotolar %}
-    <div class="photo-card"><small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br><img src="{{ url_for('foto_goster', foto_id=f['id']) }}"></div>
+    <div class="photo-card"><small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br><img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}"></div>
     {% endfor %}
 </div>
 {% endif %}
@@ -873,7 +851,7 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee; colo
     {% elif request.args.get('recete') == 'antibiyotik' %}
         <p><b>1. Augmentin-BID 1000 mg Film Tablet</b><br>Kullanım: 12 saatte bir tok karnına (10 gün).</p>
         <p><b>2. Flotac 75 mg Tablet</b><br>Kullanım: Günde 1 kez tok karnına.</p>
-    {% elif request.args.get('recete') == 'gargara' %}
+    {% elif request.args.get('recete') == 'gargara' %>
         <p><b>1. Kloroben Gargara 200 ml</b><br>Kullanım: Günde 3 defa yemeklerden sonra.</p>
     {% endif %}
     <br><br>
@@ -940,7 +918,7 @@ HASTA_PROFIL_HTML = '''
     <h3 style="margin-top:20px;">📸 Tedavi Fotoğraflarınız</h3>
     <div class="gallery">
         {% for f in fotolar %}
-        <div class="photo-card"><small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br><a href="{{ url_for('foto_goster', foto_id=f['id']) }}" target="_blank"><img src="{{ url_for('foto_goster', foto_id=f['id']) }}"></a></div>
+        <div class="photo-card"><small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br><a href="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" target="_blank"><img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}"></a></div>
         {% endfor %}
     </div>
     {% endif %}
