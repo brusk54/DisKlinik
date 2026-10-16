@@ -27,6 +27,7 @@ def init_db():
             semptomlar TEXT,
             ozel_not TEXT,
             alerji TEXT,
+            anamnez TEXT,
             randevu_tarihi TEXT,
             tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -43,6 +44,7 @@ def init_db():
         )
     ''')
     
+    # Sütun migrasyon kontrolleri
     sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(hastalar)").fetchall()]
     if "tc_no" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN tc_no TEXT")
@@ -53,9 +55,11 @@ def init_db():
     if "alerji" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN alerji TEXT")
     if "ozel_not" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN ozel_not TEXT")
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN ozet_not TEXT")
     if "semptomlar" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN semptomlar TEXT")
+    if "anamnez" not in sutunlar:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN anamnez TEXT")
         
     conn.commit()
     conn.close()
@@ -102,8 +106,13 @@ def doktor_panel():
     cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC")
     randevular = cursor.fetchall()
 
+    # Finans / Ciro Hesabı
+    cursor.execute("SELECT SUM(ucret) as toplam FROM dis_islemleri")
+    ciro_res = cursor.fetchone()
+    toplam_ciro = ciro_res['toplam'] if ciro_res and ciro_res['toplam'] else 0.0
+
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_ciro=toplam_ciro)
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -117,6 +126,10 @@ def ekle():
     yas = request.form.get('yas', '')
     secilen_semptomlar = request.form.getlist('semptomlar')
     semptomlar_str = ", ".join(secilen_semptomlar) if secilen_semptomlar else "Belirtilmemiş"
+    
+    secilen_anamnez = request.form.getlist('anamnez')
+    anamnez_str = ", ".join(secilen_anamnez) if secilen_anamnez else "Özellik yok"
+
     ozel_not = request.form.get('ozel_not', '')
     alerji = request.form.get('alerji', '')
     randevu_tarihi = request.form.get('randevu_tarihi', '')
@@ -124,9 +137,9 @@ def ekle():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO hastalar (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar, ozel_not, alerji, randevu_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar_str, ozel_not, alerji, randevu_tarihi))
+        INSERT INTO hastalar (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar, anamnez, ozel_not, alerji, randevu_tarihi)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar_str, anamnez_str, ozel_not, alerji, randevu_tarihi))
     conn.commit()
     conn.close()
     return redirect(url_for('doktor_panel'))
@@ -199,8 +212,11 @@ def hasta_detay(hasta_id):
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    
+    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
+    
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -209,7 +225,7 @@ def dis_islem_ekle(hasta_id):
         
     dis_no = request.form.get('dis_no', '')
     islem_turu = request.form.get('islem_turu', '')
-    ucret = request.form.get('ucret', 0)
+    ucret = float(request.form.get('ucret', 0))
     
     conn = get_db()
     cursor = conn.cursor()
@@ -229,8 +245,12 @@ def hasta_rapor(hasta_id):
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    
+    recete_secimi = request.args.get('recete', '')
+    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
+    
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc, recete_secimi=recete_secimi)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -263,10 +283,11 @@ def hasta_profil():
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc)
 
-# --- MODERN HTML TEMPLATES (CSS Logo Destekli) ---
+# --- MODERN HTML TEMPLATES ---
 
 LOGO_HTML = '''
 <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg, #007bff, #00d2ff); padding: 12px 24px; border-radius: 50px; color: white; box-shadow: 0 4px 15px rgba(0,123,255,0.3); margin-bottom: 15px;">
@@ -278,29 +299,21 @@ LOGO_HTML = '''
 GIRIS_SECIM_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Klinik360 Portalı</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; text-align: center; color: #333; }
-        .box { max-width: 450px; margin: 60px auto; background: white; padding: 40px 30px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
-        .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; transition: 0.2s; }
-        .btn-doktor { background: #007bff; }
-        .btn-doktor:hover { background: #0056b3; }
-        .btn-hasta { background: #28a745; }
-        .btn-hasta:hover { background: #218838; }
-    </style>
-</head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Klinik360 Portalı</title>
+<style>
+body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; text-align: center; color: #333; }
+.box { max-width: 450px; margin: 60px auto; background: white; padding: 40px 30px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+.btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; transition: 0.2s; }
+.btn-doktor { background: #007bff; } .btn-hasta { background: #28a745; }
+</style></head>
 <body>
     <div class="box">
         ''' + LOGO_HTML + '''
-        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
+        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Gelişmiş SaaS Diş Klinik Yönetim Sistemi</p>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
-</body>
-</html>
+</body></html>
 '''
 
 DOKTOR_GIRIS_HTML = '''
@@ -325,32 +338,38 @@ DOKTOR_GIRIS_HTML = '''
 DOKTOR_PANEL_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli</title>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli - Klinik360</title>
 <style>
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
-.container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.container{max-width:1000px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
 .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px}
+.finans-card{background:linear-gradient(135deg, #28a745, #20c997); color:white; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;}
 .takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
 form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
 .checkbox-group{background:white;padding:10px;border-radius:5px;border:1px solid #ccc;margin:8px 0}
-.checkbox-group label{display:block;margin-bottom:5px;cursor:pointer}
+.checkbox-group label{display:block;margin-bottom:5px;cursor:pointer;font-size:13px;}
 button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}
 table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left;font-size:13px}
 th{background:#007bff;color:white}
 .btn-sm{padding:5px 10px;text-decoration:none;border-radius:4px;font-size:12px;display:inline-block;margin:2px}
 .btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
+.badge-danger{background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:11px;}
 </style></head>
 <body>
 <div class="container">
     <div class="header">
+        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| Profesyonel Doktor Paneli</span></div>
+        <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
+    </div>
+
+    <div class="finans-card">
         <div>
-            <span style="font-size: 20px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 13px; color: #666;">| Doktor Paneli</span>
+            <h3 style="margin:0; font-size:16px;">💰 Klinik Kasa / Toplam Ciro</h3>
+            <p style="margin:5px 0 0 0; font-size:24px; font-weight:bold;">{{ "%.2f"|format(toplam_ciro) }} TL</p>
         </div>
-        <div>
-            <a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a>
-        </div>
+        <div style="font-size: 36px;">📊</div>
     </div>
 
     <div class="takvim-box">
@@ -367,7 +386,7 @@ th{background:#007bff;color:white}
     </div>
 
     <form action="/ekle" method="POST">
-        <h3 style="margin-top:0; color:#007bff;">Yeni Hasta Kaydı</h3>
+        <h3 style="margin-top:0; color:#007bff;">Yeni Hasta Kaydı & Tıbbi Anamnez</h3>
         <input type="text" name="ad_soyad" placeholder="Hasta Adı Soyadı" required>
         <input type="text" name="telefon" placeholder="Telefon Numarası (0555...)" required>
         <input type="text" name="tc_no" placeholder="TC Kimlik Numarası (11 Haneli)" maxlength="11">
@@ -385,8 +404,17 @@ th{background:#007bff;color:white}
             <label><input type="checkbox" name="semptomlar" value="Estetik / Dolgu"> Estetik / Dolgu</label>
         </div>
 
-        <textarea name="ozel_not" placeholder="Doktor Açıklaması..." rows="2"></textarea>
-        <input type="text" name="alerji" placeholder="Alerji Durumu (Varsa)">
+        <label><b>Anamnez / Tıbbi Geçmiş (Kritik Sağlık Durumları):</b></label>
+        <div class="checkbox-group" style="border-left: 4px solid #dc3545;">
+            <label><input type="checkbox" name="anamnez" value="Kan Sulandırıcı Kullanıyor"> 🩸 Kan Sulandırıcı Kullanıyor</label>
+            <label><input type="checkbox" name="anamnez" value="Diyabet (Şeker Hastalığı)"> 🩺 Diyabet (Şeker Hastalığı)</label>
+            <label><input type="checkbox" name="anamnez" value="Hipertansiyon (Yüksek Tansiyon)"> ❤️ Hipertansiyon (Yüksek Tansiyon)</label>
+            <label><input type="checkbox" name="anamnez" value="Kalp Rahatsızlığı"> 🫀 Kalp Rahatsızlığı</label>
+            <label><input type="checkbox" name="anamnez" value="Bulaşıcı Hastalık Riski"> ⚠️ Bulaşıcı Hastalık Riski</label>
+        </div>
+
+        <textarea name="ozel_not" placeholder="Doktor Açıklaması / Klinik Not..." rows="2"></textarea>
+        <input type="text" name="alerji" placeholder="Alerji Durumu (Örn: Penisilin Alerjisi)">
         <input type="date" name="randevu_tarihi">
         <button type="submit">Hastayı Kaydet</button>
     </form>
@@ -397,15 +425,18 @@ th{background:#007bff;color:white}
 
     <h2>Kayıtlı Hastalar</h2>
     <table>
-        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Semptom & Not</th><th>Randevu</th><th>İşlemler</th></tr>
+        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Kritik Anamnez & Notlar</th><th>Randevu</th><th>İşlemler</th></tr>
         {% for h in hastalar %}
         <tr>
             <td><b>{{ h['ad_soyad'] }}</b><br><small>Doğum: {{ h['dogum_tarihi'] or '-' }} (Yaş: {{ h['yas'] or '-' }})</small></td>
             <td>Tel: {{ h['telefon'] }}<br><small>TC: {{ h['tc_no'] or '-' }}</small></td>
             <td>
+                {% if h['anamnez'] and h['anamnez'] != 'Özellik yok' %}
+                    <span class="badge-danger">{{ h['anamnez'] }}</span><br>
+                {% endif %}
                 <b>Semptom:</b> {{ h['semptomlar'] or '' }}<br>
                 {% if h['ozel_not'] %}<b>Not:</b> {{ h['ozel_not'] }}<br>{% endif %}
-                {% if h['alerji'] %}<small style="color:red;">Alerji: {{ h['alerji'] }}</small>{% endif %}
+                {% if h['alerji'] %}<small style="color:red; font-weight:bold;">Alerji: {{ h['alerji'] }}</small>{% endif %}
             </td>
             <td>{{ h['randevu_tarihi'] or '' }}</td>
             <td>
@@ -445,21 +476,41 @@ HASTA_DUZENLE_HTML = '''
 HASTA_DETAY_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Diş Kartı</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:800px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#28a745;color:white}.btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right}</style></head>
+<head><meta charset="UTF-8"><title>Diş Kartı</title>
+<style>
+body{font-family:Arial;padding:10px;background:#f4f7f6}
+.container{max-width:850px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}
+form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}
+input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
+button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}
+table{width:100%;border-collapse:collapse;margin-top:15px}
+th,td{border:1px solid #ddd;padding:10px;text-align:left}
+th{background:#28a745;color:white}
+.btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right;display:inline-block;}
+.badge-danger{background:#dc3545; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:bold;}
+</style></head>
 <body><div class="container">
     <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Geri</a>
-    <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete Çıktısı Al</a>
-    <h1 style="color:#007bff;">🦷 Hasta Diş Kartı</h1>
+    <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete & Rapor Al</a>
+    <h1 style="color:#007bff;">🦷 Hasta Diş Kartı & Tedavi Planı</h1>
+    
     <div class="info-box">
         <h3>{{ hasta['ad_soyad'] }}</h3>
+        {% if hasta['anamnez'] and hasta['anamnez'] != 'Özellik yok' %}
+            <p><b>Kritik Anamnez:</b> <span class="badge-danger">{{ hasta['anamnez'] }}</span></p>
+        {% endif %}
         <p><b>TC No:</b> {{ hasta['tc_no'] or 'Belirtilmemiş' }} | <b>Telefon:</b> {{ hasta['telefon'] }}</p>
         <p><b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }} | <b>Yaş:</b> {{ hasta['yas'] or '-' }}</p>
         <p><b>Semptomlar:</b> {{ hasta['semptomlar'] or '' }}</p>
         <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
-        <p><b>Alerji:</b> {{ hasta['alerji'] or 'Yok' }}</p>
+        <p><b>Alerji:</b> <span style="color:red; font-weight:bold;">{{ hasta['alerji'] or 'Yok' }}</span></p>
+        <hr style="border:0; border-top:1px solid #ccc;">
+        <p style="font-size:16px; margin:0;"><b>Toplam Tedavi Borcu:</b> <span style="color:#28a745; font-weight:bold;">{{ "%.2f"|format(toplam_borc) }} TL</span></p>
     </div>
+
     <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
-        <h3 style="margin-top:0; color:#007bff;">Diş Tedavisi / İşlem Ekle</h3>
+        <h3 style="margin-top:0; color:#007bff;">ISO Diş Numaralandırma & Tedavi Ekle</h3>
         <select name="dis_no" required>
             <option value="">-- Diş Seçiniz (ISO Numarası) --</option>
             <option value="11">11 - Sağ Üst Kesici</option>
@@ -482,22 +533,23 @@ HASTA_DETAY_HTML = '''
         </select>
         <select name="islem_turu" required>
             <option value="">-- Yapılan İşlem / Tedavi --</option>
-            <option value="Dolgu">Kompozit / Amalgam Dolgu</option>
+            <option value="Kompozit Dolgu">Kompozit Dolgu</option>
             <option value="Kanal Tedavisi">Kanal Tedavisi</option>
             <option value="Diş Çekimi">Diş Çekimi</option>
             <option value="Diş Taşı Temizliği">Diş Taşı Temizliği</option>
-            <option value="Kron / Kaplama">Kron / Porselen Kaplama</option>
+            <option value="Porselen Kron Kaplama">Porselen Kron Kaplama</option>
             <option value="İmplant">İmplant</option>
         </select>
         <input type="number" step="0.01" name="ucret" placeholder="İşlem Ücreti (TL)" required>
         <button type="submit">İşlemi Kaydet</button>
     </form>
+
     <h2>Uygulanan Diş Tedavileri</h2>
     <table>
         <tr><th>Diş No</th><th>Tedavi</th><th>Ücret</th><th>Eylem</th></tr>
         {% for i in islemler %}
         <tr>
-            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ i['ucret'] }} TL</td>
+            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td>
             <td><a href="/islem-sil/{{ i['id'] }}/{{ hasta['id'] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
         </tr>
         {% endfor %}
@@ -508,27 +560,70 @@ HASTA_DETAY_HTML = '''
 HASTA_RAPOR_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Rapor</title><style>body{font-family:Arial;padding:40px;color:#333}.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:30px}.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}@media print{.print-btn{display:none}}</style></head>
+<head><meta charset="UTF-8"><title>Reçete ve Rapor</title>
+<style>
+body{font-family:Arial;padding:40px;color:#333; max-width:800px; margin:auto;}
+.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:20px}
+.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}
+table{width:100%;border-collapse:collapse;margin-top:15px}
+th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
+.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}
+.recete-box{background:#e8f4fd; border:1px dashed #007bff; padding:15px; border-radius:8px; margin-top:20px;}
+@media print{.print-btn, .no-print{display:none}}
+</style></head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır / PDF İndir</button>
+
 <div class="header">
     <h1 style="color: #007bff; margin: 0;">🦷 Klinik360</h1>
-    <h2>DİŞ SAĞLIĞI & TEDAVİ RAPORU</h2>
+    <h2>DİŞ SAĞLIĞI TEDAVİ & REÇETE RAPORU</h2>
 </div>
+
 <div class="box">
     <h3>Hasta Bilgileri</h3>
+    {% if hasta['anamnez'] and hasta['anamnez'] != 'Özellik yok' %}
+        <p style="color:red; font-weight:bold;">⚠️ Kritik Anamnez: {{ hasta['anamnez'] }}</p>
+    {% endif %}
     <p><b>Adı Soyadı:</b> {{ hasta['ad_soyad'] }} | <b>TC No:</b> {{ hasta['tc_no'] or '-' }}</p>
     <p><b>Telefon:</b> {{ hasta['telefon'] }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }} (Yaş: {{ hasta['yas'] or '-' }})</p>
-    <p><b>Alerji / Özel Durum:</b> {{ hasta['alerji'] or 'Yok' }}</p>
+    <p><b>Alerji Durumu:</b> <span style="color:red;">{{ hasta['alerji'] or 'Yok' }}</span></p>
     <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
 </div>
-<h3>Uygulanan Tedaviler</h3>
+
+<h3>Uygulanan Tedaviler & Ücretler</h3>
 <table>
-    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th></tr>
+    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th><th>Ücret</th></tr>
     {% for i in islemler %}
-    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td></tr>
+    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td></tr>
     {% endfor %}
+    <tr><td colspan="2" style="text-align:right;"><b>Toplam Borç / Tutar:</b></td><td><b>{{ "%.2f"|format(toplam_borc) }} TL</b></td></tr>
 </table>
+
+<div class="no-print" style="margin-top:25px;">
+    <h3>💊 Hazır Reçete Şablonu Seç</h3>
+    <a href="/hasta-rapor/{{ hasta['id'] }}?recete=agri" style="background:#007bff; color:white; padding:8px 12px; text-decoration:none; border-radius:4px; margin-right:10px; display:inline-block;">Ağrı Kesici Şablonu</a>
+    <a href="/hasta-rapor/{{ hasta['id'] }}?recete=antibiyotik" style="background:#17a2b8; color:white; padding:8px 12px; text-decoration:none; border-radius:4px; margin-right:10px; display:inline-block;">Apse / Antibiyotik Şablonu</a>
+    <a href="/hasta-rapor/{{ hasta['id'] }}?recete=gargara" style="background:#6c757d; color:white; padding:8px 12px; text-decoration:none; border-radius:4px; display:inline-block;">Diş Eti & Gargara Şablonu</a>
+</div>
+
+{% if request.args.get('recete') %}
+<div class="recete-box">
+    <h3>📝 Doktor Reçetesi</h3>
+    {% if request.args.get('recete') == 'agri' %}
+        <p><b>1. Majezik 100 mg Film Tablet</b><br>Kullanım: Günde 2 defa tok karnına (Ağrı durumunda).</p>
+        <p><b>2. Apranax Fort 550 mg</b><br>Kullanım: 12 saatte bir tok karnına.</p>
+    {% elif request.args.get('recete') == 'antibiyotik' %}
+        <p><b>1. Augmentin-BID 1000 mg Film Tablet</b><br>Kullanım: 12 saatte bir tok karnına (10 gün süreyle eksiksiz kullanım).</p>
+        <p><b>2. Flotac 75 mg Tablet</b><br>Kullanım: Günde 1 kez tok karnına.</p>
+    {% elif request.args.get('recete') == 'gargara' %}
+        <p><b>1. Kloroben Gargara 200 ml</b><br>Kullanım: Günde 3 defa yemeklerden sonra 1 dakika çalkalayıp tükürünüz.</p>
+        <p><b>2. Curaprox Diş İpi & Fırçası</b></p>
+    {% endif %}
+    <br><br>
+    <p style="text-align:right;"><b>Hekim Kaşesi & İmza</b><br>Klinik360 Diş Polikliniği</p>
+</div>
+{% endif %}
+
 </body></html>
 '''
 
@@ -564,13 +659,14 @@ HASTA_PROFIL_HTML = '''
         <p><b>TC No:</b> {{ hasta['tc_no'] or '-' }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }}</p>
         <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
         <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
+        <p style="font-size:16px;"><b>Toplam Borcunuz:</b> <span style="color:#28a745; font-weight:bold;">{{ "%.2f"|format(toplam_borc) }} TL</span></p>
     </div>
     <h3>🦷 Tedavileriniz</h3>
     {% if islemler %}
     <table>
-        <tr><th>Diş No</th><th>Yapılan Tedavi</th></tr>
+        <tr><th>Diş No</th><th>Yapılan Tedavi</th><th>Ücret</th></tr>
         {% for i in islemler %}
-        <tr><td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td></tr>
+        <tr><td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td></tr>
         {% endfor %}
     </table>
     {% else %}
