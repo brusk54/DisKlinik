@@ -12,7 +12,7 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# Veritabanı Otomatik Güncelleme / Kurulum
+# Veritabanı Otomatik Güncelleme ve Sütun Kontrolü
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -22,6 +22,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ad_soyad TEXT NOT NULL,
             telefon TEXT NOT NULL,
+            tc_no TEXT,
+            dogum_tarihi TEXT,
             yas TEXT,
             semptomlar TEXT,
             ozel_not TEXT,
@@ -42,9 +44,13 @@ def init_db():
         )
     ''')
     
-    # Eksik Sütunları Güvenli Ekleme
+    # Eksik olabilecek yeni sütunları güvenle ekle
     sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(hastalar)").fetchall()]
     
+    if "tc_no" not in sutunlar:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN tc_no TEXT")
+    if "dogum_tarihi" not in sutunlar:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN dogum_tarihi TEXT")
     if "randevu_tarihi" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_tarihi TEXT")
     if "alerji" not in sutunlar:
@@ -90,7 +96,7 @@ def doktor_panel():
     
     arama = request.args.get('arama', '')
     if arama:
-        cursor.execute("SELECT * FROM hastalar WHERE ad_soyad LIKE ? OR telefon LIKE ? ORDER BY id DESC", ('%' + arama + '%', '%' + arama + '%'))
+        cursor.execute("SELECT * FROM hastalar WHERE ad_soyad LIKE ? OR telefon LIKE ? OR tc_no LIKE ? ORDER BY id DESC", ('%' + arama + '%', '%' + arama + '%', '%' + arama + '%'))
     else:
         cursor.execute("SELECT * FROM hastalar ORDER BY id DESC")
         
@@ -109,6 +115,8 @@ def ekle():
         
     ad_soyad = request.form.get('ad_soyad', '')
     telefon = request.form.get('telefon', '')
+    tc_no = request.form.get('tc_no', '')
+    dogum_tarihi = request.form.get('dogum_tarihi', '')
     yas = request.form.get('yas', '')
     secilen_semptomlar = request.form.getlist('semptomlar')
     semptomlar_str = ", ".join(secilen_semptomlar) if secilen_semptomlar else "Belirtilmemiş"
@@ -119,9 +127,9 @@ def ekle():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO hastalar (ad_soyad, telefon, yas, semptomlar, ozel_not, alerji, randevu_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (ad_soyad, telefon, yas, semptomlar_str, ozel_not, alerji, randevu_tarihi))
+        INSERT INTO hastalar (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar, ozel_not, alerji, randevu_tarihi)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar_str, ozel_not, alerji, randevu_tarihi))
     conn.commit()
     conn.close()
     return redirect(url_for('doktor_panel'))
@@ -137,6 +145,8 @@ def hasta_duzenle(hasta_id):
     if request.method == 'POST':
         ad_soyad = request.form.get('ad_soyad', '')
         telefon = request.form.get('telefon', '')
+        tc_no = request.form.get('tc_no', '')
+        dogum_tarihi = request.form.get('dogum_tarihi', '')
         yas = request.form.get('yas', '')
         ozel_not = request.form.get('ozel_not', '')
         alerji = request.form.get('alerji', '')
@@ -144,9 +154,9 @@ def hasta_duzenle(hasta_id):
 
         cursor.execute('''
             UPDATE hastalar 
-            SET ad_soyad=?, telefon=?, yas=?, ozel_not=?, alerji=?, randevu_tarihi=?
+            SET ad_soyad=?, telefon=?, tc_no=?, dogum_tarihi=?, yas=?, ozel_not=?, alerji=?, randevu_tarihi=?
             WHERE id=?
-        ''', (ad_soyad, telefon, yas, ozel_not, alerji, randevu_tarihi, hasta_id))
+        ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, ozel_not, alerji, randevu_tarihi, hasta_id))
         conn.commit()
         conn.close()
         return redirect(url_for('doktor_panel'))
@@ -229,10 +239,10 @@ def hasta_rapor(hasta_id):
 def hasta_giris():
     hata = None
     if request.method == 'POST':
-        telefon = request.form.get('telefon', '').strip()
+        girdi = request.form.get('girdi', '').strip()
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM hastalar WHERE telefon LIKE ?", ('%' + telefon + '%',))
+        cursor.execute("SELECT * FROM hastalar WHERE telefon LIKE ? OR tc_no = ?", ('%' + girdi + '%', girdi))
         hasta = cursor.fetchone()
         
         if hasta:
@@ -240,7 +250,7 @@ def hasta_giris():
             conn.close()
             return redirect(url_for('hasta_profil'))
         else:
-            hata = "Kayıt bulunamadı."
+            hata = "Girdiğiniz bilgilere ait kayıt bulunamadı."
         conn.close()
     return render_template_string(HASTA_GIRIS_HTML, hata=hata)
 
@@ -312,7 +322,7 @@ DOKTOR_PANEL_HTML = '''
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli</title>
 <style>
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
-.container{max-width:900px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}
+.container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}
 .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:15px}
 .logo-container img{max-width:150px}
 .takvim-box{background:#e3f2fd;padding:12px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
@@ -351,7 +361,11 @@ th{background:#007bff;color:white}
         <h3>Yeni Hasta Kaydı</h3>
         <input type="text" name="ad_soyad" placeholder="Hasta Adı Soyadı" required>
         <input type="text" name="telefon" placeholder="Telefon Numarası (0555...)" required>
-        <input type="number" name="yas" placeholder="Yaş">
+        <input type="text" name="tc_no" placeholder="TC Kimlik Numarası (11 Haneli)" maxlength="11">
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1;"><label style="font-size:12px; color:#666;">Doğum Tarihi:</label><input type="date" name="dogum_tarihi"></div>
+            <div style="flex:1;"><label style="font-size:12px; color:#666;">Yaş:</label><input type="number" name="yas" placeholder="Yaş"></div>
+        </div>
         
         <label><b>Semptomlar ve Şikayetler:</b></label>
         <div class="checkbox-group">
@@ -369,16 +383,16 @@ th{background:#007bff;color:white}
     </form>
 
     <form method="GET" action="/doktor-panel" style="background:none;padding:0;">
-        <input type="text" name="arama" placeholder="İsim veya telefon ile ara..." value="{{ arama }}">
+        <input type="text" name="arama" placeholder="İsim, telefon veya TC No ile ara..." value="{{ arama }}">
     </form>
 
     <h2>Kayıtlı Hastalar</h2>
     <table>
-        <tr><th>Ad Soyad</th><th>Telefon</th><th>Semptom & Not</th><th>Randevu</th><th>İşlemler</th></tr>
+        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Semptom & Not</th><th>Randevu</th><th>İşlemler</th></tr>
         {% for h in hastalar %}
         <tr>
-            <td><b>{{ h['ad_soyad'] }}</b><br><small>Yaş: {{ h['yas'] or '' }}</small></td>
-            <td>{{ h['telefon'] }}</td>
+            <td><b>{{ h['ad_soyad'] }}</b><br><small>Doğum: {{ h['dogum_tarihi'] or '-' }} (Yaş: {{ h['yas'] or '-' }})</small></td>
+            <td>Tel: {{ h['telefon'] }}<br><small>TC: {{ h['tc_no'] or '-' }}</small></td>
             <td>
                 <b>Semptom:</b> {{ h['semptomlar'] or '' }}<br>
                 {% if h['ozel_not'] %}<b>Not:</b> {{ h['ozel_not'] }}<br>{% endif %}
@@ -407,6 +421,8 @@ HASTA_DUZENLE_HTML = '''
     <form method="POST">
         <label>Ad Soyad:</label><input type="text" name="ad_soyad" value="{{ hasta['ad_soyad'] }}" required>
         <label>Telefon:</label><input type="text" name="telefon" value="{{ hasta['telefon'] }}" required>
+        <label>TC Kimlik No:</label><input type="text" name="tc_no" value="{{ hasta['tc_no'] or '' }}" maxlength="11">
+        <label>Doğum Tarihi:</label><input type="date" name="dogum_tarihi" value="{{ hasta['dogum_tarihi'] or '' }}">
         <label>Yaş:</label><input type="number" name="yas" value="{{ hasta['yas'] or '' }}">
         <label>Doktor Notu:</label><textarea name="ozel_not" rows="3">{{ hasta['ozel_not'] or '' }}</textarea>
         <label>Alerji:</label><input type="text" name="alerji" value="{{ hasta['alerji'] or '' }}">
@@ -427,7 +443,8 @@ HASTA_DETAY_HTML = '''
     <h1 style="color:#007bff;">🦷 Hasta Diş Kartı</h1>
     <div class="info-box">
         <h3>{{ hasta['ad_soyad'] }}</h3>
-        <p><b>Telefon:</b> {{ hasta['telefon'] }} | <b>Yaş:</b> {{ hasta['yas'] or '' }}</p>
+        <p><b>TC No:</b> {{ hasta['tc_no'] or 'Belirtilmemiş' }} | <b>Telefon:</b> {{ hasta['telefon'] }}</p>
+        <p><b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }} | <b>Yaş:</b> {{ hasta['yas'] or '-' }}</p>
         <p><b>Semptomlar:</b> {{ hasta['semptomlar'] or '' }}</p>
         <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
         <p><b>Alerji:</b> {{ hasta['alerji'] or 'Yok' }}</p>
@@ -491,7 +508,8 @@ HASTA_RAPOR_HTML = '''
 </div>
 <div class="box">
     <h3>Hasta Bilgileri</h3>
-    <p><b>Adı Soyadı:</b> {{ hasta['ad_soyad'] }} | <b>Telefon:</b> {{ hasta['telefon'] }} | <b>Yaş:</b> {{ hasta['yas'] or '' }}</p>
+    <p><b>Adı Soyadı:</b> {{ hasta['ad_soyad'] }} | <b>TC No:</b> {{ hasta['tc_no'] or '-' }}</p>
+    <p><b>Telefon:</b> {{ hasta['telefon'] }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }} (Yaş: {{ hasta['yas'] or '-' }})</p>
     <p><b>Alerji / Özel Durum:</b> {{ hasta['alerji'] or 'Yok' }}</p>
     <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
 </div>
@@ -512,9 +530,10 @@ HASTA_GIRIS_HTML = '''
 <body>
 <div class="box">
     <h2>📱 Hasta Takip</h2>
+    <p style="color:#666; font-size:13px;">Telefon numaranız veya TC Kimlik numaranız ile giriş yapabilirsiniz.</p>
     {% if hata %}<p style="color:red;">{{ hata }}</p>{% endif %}
     <form method="POST">
-        <input type="text" name="telefon" placeholder="Telefon Numarası (0555...)" required>
+        <input type="text" name="girdi" placeholder="Telefon veya TC Kimlik No" required>
         <button type="submit">Randevumu Göster</button>
     </form>
     <br><a href="/" style="color:#666;text-decoration:none;">⬅ Ana Sayfa</a>
@@ -532,6 +551,7 @@ HASTA_PROFIL_HTML = '''
     <h2>🦷 Klinik360 Hasta Bilgi Kartı</h2>
     <div class="card">
         <h3>Sayın {{ hasta['ad_soyad'] }}</h3>
+        <p><b>TC No:</b> {{ hasta['tc_no'] or '-' }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }}</p>
         <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
         <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
     </div>
