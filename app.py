@@ -128,6 +128,125 @@ def init_db():
 
 init_db()
 
+# --- ORTAK TEMA SCRIPT VE CSS ---
+DARK_MODE_STYLE = '''
+<style>
+:root {
+    --bg-color: #f4f7f6;
+    --card-bg: #ffffff;
+    --text-color: #333333;
+    --border-color: #dddddd;
+    --form-bg: #e9ecef;
+    --table-header-bg: #007bff;
+    --table-header-color: #ffffff;
+    --table-row-hover: #f1f1f1;
+}
+
+[data-theme="dark"] {
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --border-color: #333333;
+    --form-bg: #2a2a2a;
+    --table-header-bg: #1f4068;
+    --table-header-color: #ffffff;
+    --table-row-hover: #2c2c2c;
+}
+
+body {
+    background-color: var(--bg-color) !important;
+    color: var(--text-color) !important;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.container, .box, .info-box, .photo-card {
+    background-color: var(--card-bg) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+form {
+    background-color: var(--form-bg) !important;
+    color: var(--text-color) !important;
+}
+
+input, select, textarea {
+    background-color: var(--card-bg) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+}
+
+table {
+    background-color: var(--card-bg) !important;
+    color: var(--text-color) !important;
+}
+
+th {
+    background-color: var(--table-header-bg) !important;
+    color: var(--table-header-color) !important;
+}
+
+td {
+    border-color: var(--border-color) !important;
+}
+
+tr:hover {
+    background-color: var(--table-row-hover) !important;
+}
+
+.theme-toggle-btn {
+    background: transparent;
+    border: 2px solid #007bff;
+    color: #007bff;
+    padding: 6px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: 0.2s;
+}
+
+[data-theme="dark"] .theme-toggle-btn {
+    border-color: #ffc107;
+    color: #ffc107;
+}
+
+@media (max-width: 768px) {
+    .container { padding: 10px !important; }
+    .stats-grid { grid-template-columns: 1fr !important; }
+    .tooth-grid { grid-template-columns: repeat(4, 1fr) !important; }
+    table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+</style>
+
+<script>
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeBtnText();
+}
+
+function updateThemeBtnText() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    const btn = document.getElementById('theme-toggle-btn');
+    if (btn) {
+        btn.innerHTML = theme === 'dark' ? '☀️ Aydınlık Mod' : '🌙 Karanlık Mod';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeBtnText();
+});
+</script>
+'''
+
 @app.route('/')
 def index():
     return render_template_string(GIRIS_SECIM_HTML)
@@ -443,16 +562,20 @@ GIRIS_SECIM_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Klinik360 Portalı</title>
+''' + DARK_MODE_STYLE + '''
 <style>
-body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; text-align: center; color: #333; }
-.box { max-width: 450px; margin: 60px auto; background: white; padding: 40px 30px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+body { font-family: Arial, sans-serif; margin: 0; padding: 20px; text-align: center; }
+.box { max-width: 450px; margin: 60px auto; padding: 40px 30px; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
 .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; transition: 0.2s; }
 .btn-doktor { background: #007bff; } .btn-hasta { background: #28a745; }
 </style></head>
 <body>
+    <div style="text-align: right; max-width: 450px; margin: auto;">
+        <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+    </div>
     <div class="box">
         ''' + LOGO_HTML + '''
-        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
+        <p style="opacity: 0.8; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Personel / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
@@ -462,19 +585,22 @@ body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 
 DOKTOR_GIRIS_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Personel Girişi</title>
-<style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:380px;margin:80px auto;background:white;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Personel Girişi</title>
+''' + DARK_MODE_STYLE + '''
+<style>body{font-family:Arial;padding:20px;text-align:center}.box{max-width:380px;margin:60px auto;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
 <body>
+<div style="text-align: right; max-width: 380px; margin: auto;">
+    <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+</div>
 <div class="box">
     ''' + LOGO_HTML + '''
     <h2>Klinik Personel Girişi</h2>
-    <p style="font-size:12px; color:#666;">Doktor Şifresi: <b>1234</b> | Sekreter Şifresi: <b>5678</b></p>
     {% if hata %}<p style="color:red; font-size:14px;">{{ hata }}</p>{% endif %}
     <form method="POST">
         <input type="password" name="sifre" placeholder="Personel Şifresi" required>
         <button type="submit">Giriş Yap</button>
     </form>
-    <br><a href="/" style="color:#666;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
+    <br><a href="/" style="color:#007bff;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
 </div>
 </body></html>
 '''
@@ -483,24 +609,24 @@ DOKTOR_PANEL_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli - Klinik360</title>
+''' + DARK_MODE_STYLE + '''
 <style>
-body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
-.container{max-width:1000px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
-.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px}
+body{font-family:Arial;padding:10px;}
+.container{max-width:1000px;margin:auto;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px; flex-wrap: wrap; gap: 10px;}
 .stats-grid{display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin-bottom:20px;}
 .stat-card{background:linear-gradient(135deg, #007bff, #00c6ff); color:white; padding:15px; border-radius:10px; text-align:center;}
 .stat-card:nth-child(2){background:linear-gradient(135deg, #28a745, #20c997);}
 .stat-card:nth-child(3){background:linear-gradient(135deg, #ffc107, #ff9800); color:#333;}
-.takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
-.tarife-box{background:#fff3cd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #ffc107}
-form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
-input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
-.checkbox-group{background:white;padding:10px;border-radius:5px;border:1px solid #ccc;margin:8px 0}
+.takvim-box{padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff; border: 1px solid var(--border-color);}
+.tarife-box{padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #ffc107; border: 1px solid var(--border-color);}
+form{padding:20px;border-radius:8px;margin-bottom:20px}
+input,select,textarea{width:100%;padding:10px;margin:8px 0;border-radius:5px;box-sizing:border-box}
+.checkbox-group{padding:10px;border-radius:5px;border:1px solid var(--border-color);margin:8px 0}
 .checkbox-group label{display:block;margin-bottom:5px;cursor:pointer;font-size:13px;}
 button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}
 table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left;font-size:13px}
-th{background:#007bff;color:white}
 .btn-sm{padding:5px 8px;text-decoration:none;border-radius:4px;font-size:11px;display:inline-block;margin:2px}
 .btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-sms{background:#6f42c1;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
 .badge-danger{background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:11px;}
@@ -511,10 +637,13 @@ th{background:#007bff;color:white}
     <div class="header">
         <div>
             <span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> 
-            <span style="font-size: 14px; color: #666;">| {{ ayar['doktor_adi'] }}</span>
+            <span style="font-size: 14px; opacity: 0.8;">| {{ ayar['doktor_adi'] }}</span>
             <span class="badge-role">{{ '👨‍⚕️ Doktor Yetkisi' if rol == 'doktor' else '📋 Sekreter Yetkisi' }}</span>
         </div>
-        <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+            <a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a>
+        </div>
     </div>
 
     <div class="stats-grid">
@@ -534,9 +663,9 @@ th{background:#007bff;color:white}
 
     <!-- SAAT ÇAKIŞMASIZ RANDEVU TAKVİMİ -->
     <div class="takvim-box">
-        <h3 style="margin-top:0;color:#0056b3;">📅 Saatli Randevu Takvimi</h3>
+        <h3 style="margin-top:0;color:#007bff;">📅 Saatli Randevu Takvimi</h3>
         {% if randevular %}
-            <table style="background:white; margin-top:5px;">
+            <table style="margin-top:5px;">
                 <tr><th>Tarih & Saat</th><th>Hasta Adı Soyadı</th><th>İletişim Telefonu</th></tr>
                 {% for r in randevular %}
                 <tr>
@@ -547,18 +676,18 @@ th{background:#007bff;color:white}
                 {% endfor %}
             </table>
         {% else %}
-            <p style="margin:0;color:gray;">Planlanmış randevu yok.</p>
+            <p style="margin:0;opacity:0.7;">Planlanmış randevu yok.</p>
         {% endif %}
     </div>
 
     {% if rol == 'doktor' %}
     <!-- DİŞ TEDAVİSİ FİYAT TARİFESİ DÜZENLEME (SADECE DOKTOR) -->
     <div class="tarife-box">
-        <h3 style="margin-top:0; color:#856404;">📋 Kliniğe Özel Diş Tedavisi Fiyat Tarifesi</h3>
+        <h3 style="margin-top:0; color:#ffc107;">📋 Kliniğe Özel Diş Tedavisi Fiyat Tarifesi</h3>
         <form action="/fiyat-guncelle" method="POST" style="background:transparent; padding:0; margin:0;">
-            <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px;">
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px;">
                 {% for t in tarifeler %}
-                <div style="display:flex; align-items:center; gap:5px; background:white; padding:5px 10px; border-radius:5px; border:1px solid #ddd;">
+                <div style="display:flex; align-items:center; gap:5px; padding:5px 10px; border-radius:5px; border:1px solid var(--border-color);">
                     <span style="font-size:12px; font-weight:bold; flex:1;">{{ t['islem_adi'] }}:</span>
                     <input type="number" name="fiyat_{{ t['id'] }}" value="{{ t['varsayilan_fiyat'] }}" style="width:100px; margin:0; padding:4px;" step="50"> TL
                 </div>
@@ -574,9 +703,9 @@ th{background:#007bff;color:white}
         <input type="text" name="ad_soyad" placeholder="Hasta Adı Soyadı" required>
         <input type="text" name="telefon" placeholder="Telefon Numarası (0555...)" required>
         <input type="text" name="tc_no" placeholder="TC Kimlik Numarası (11 Haneli)" maxlength="11">
-        <div style="display:flex; gap:10px;">
-            <div style="flex:1;"><label style="font-size:12px; color:#666;">Doğum Tarihi:</label><input type="date" name="dogum_tarihi"></div>
-            <div style="flex:1;"><label style="font-size:12px; color:#666;">Yaş:</label><input type="number" name="yas" placeholder="Yaş"></div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:140px;"><label style="font-size:12px; opacity:0.8;">Doğum Tarihi:</label><input type="date" name="dogum_tarihi"></div>
+            <div style="flex:1; min-width:140px;"><label style="font-size:12px; opacity:0.8;">Yaş:</label><input type="number" name="yas" placeholder="Yaş"></div>
         </div>
         
         <label><b>Semptomlar ve Şikayetler:</b></label>
@@ -600,9 +729,9 @@ th{background:#007bff;color:white}
         <textarea name="ozel_not" placeholder="Doktor Açıklaması / Klinik Not..." rows="2"></textarea>
         <input type="text" name="alerji" placeholder="Alerji Durumu (Örn: Penisilin Alerjisi)">
         
-        <div style="display:flex; gap:10px;">
-            <div style="flex:1;"><label style="font-size:12px; color:#666;">Randevu Tarihi:</label><input type="date" name="randevu_tarihi"></div>
-            <div style="flex:1;"><label style="font-size:12px; color:#666;">Randevu Saati:</label>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:140px;"><label style="font-size:12px; opacity:0.8;">Randevu Tarihi:</label><input type="date" name="randevu_tarihi"></div>
+            <div style="flex:1; min-width:140px;"><label style="font-size:12px; opacity:0.8;">Randevu Saati:</label>
                 <select name="randevu_saati">
                     <option value="">-- Saat Seçin --</option>
                     <option value="09:00">09:00</option><option value="09:30">09:30</option>
@@ -662,8 +791,14 @@ th{background:#007bff;color:white}
 HASTA_DUZENLE_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Düzenle</title><style>body{font-family:Arial;padding:20px;background:#f4f7f6}.box{max-width:500px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}input,textarea,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}</style></head>
-<body><div class="box">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Düzenle</title>
+''' + DARK_MODE_STYLE + '''
+<style>body{font-family:Arial;padding:20px;}.box{max-width:500px;margin:auto;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}input,textarea,select{width:100%;padding:10px;margin:8px 0;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}</style></head>
+<body>
+<div style="text-align: right; max-width: 500px; margin: auto;">
+    <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+</div>
+<div class="box">
     <h2 style="color:#007bff; margin-top:0;">✏️ Hasta Bilgilerini Düzenle</h2>
     <form method="POST">
         <label>Ad Soyad:</label><input type="text" name="ad_soyad" value="{{ hasta['ad_soyad'] }}" required>
@@ -678,31 +813,31 @@ HASTA_DUZENLE_HTML = '''
         <input type="text" name="randevu_saati" value="{{ hasta['randevu_saati'] or '' }}" placeholder="Örn: 14:00">
         <button type="submit">GÜNCELLE</button>
     </form>
-    <br><a href="/doktor-panel" style="color:gray;text-decoration:none;">⬅ İptal</a>
+    <br><a href="/doktor-panel" style="color:#007bff;text-decoration:none;">⬅ İptal</a>
 </div></body></html>
 '''
 
 HASTA_DETAY_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Diş Kartı</title>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Diş Kartı</title>
+''' + DARK_MODE_STYLE + '''
 <style>
-body{font-family:Arial;padding:10px;background:#f4f7f6}
-.container{max-width:900px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
-.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}
-form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}
-input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
+body{font-family:Arial;padding:10px;}
+.container{max-width:900px;margin:auto;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.info-box{padding:15px;border-radius:8px;margin-bottom:20px; border:1px solid var(--border-color);}
+form{padding:15px;border-radius:8px;border:1px solid var(--border-color);margin-bottom:20px}
+input,select{width:100%;padding:10px;margin:8px 0;border-radius:5px;box-sizing:border-box}
 button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}
 table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left}
-th{background:#28a745;color:white}
 .btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right;display:inline-block;}
 .badge-danger{background:#dc3545; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:bold;}
 .tooth-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-bottom: 10px; }
-.tooth-btn { background: #e3f2fd; border: 1px solid #007bff; padding: 8px; text-align: center; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; color: #0056b3; }
-.tooth-btn:hover { background: #007bff; color: white; }
+.tooth-btn { background: #007bff; color: white; padding: 8px; text-align: center; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; }
+.tooth-btn:hover { background: #0056b3; }
 .gallery { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 15px; }
-.photo-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px; width: 200px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.photo-card { border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; width: 200px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
 .photo-card img { width: 100%; height: 140px; object-fit: cover; border-radius: 4px; margin-bottom: 8px; }
 </style>
 <script>
@@ -722,8 +857,14 @@ function fiyatGetir() {
 </script>
 </head>
 <body><div class="container">
-    <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Geri</a>
-    <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete & Rapor Al</a>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+        <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Geri</a>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+            <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete & Rapor Al</a>
+        </div>
+    </div>
+    
     <h1 style="color:#007bff;">🦷 İnteraktif Diş Şeması & Tedavi Planı</h1>
     
     <div class="info-box">
@@ -738,11 +879,11 @@ function fiyatGetir() {
     </div>
 
     <!-- İNTERAKTİF DİŞ ŞEMASI -->
-    <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:20px;">
+    <div style="padding:15px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:20px;">
         <h3 style="margin-top:0; color:#007bff; text-align:center;">🦷 İnteraktif Çene & Diş Haritası (Tıklayarak Seçin)</h3>
-        <p style="text-align:center; font-size:12px; color:#666;">İşlem yapmak istediğiniz dişe tıklayın.</p>
+        <p style="text-align:center; font-size:12px; opacity:0.8;">İşlem yapmak istediğiniz dişe tıklayın.</p>
         
-        <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#555;">Üst Çene</p>
+        <p style="margin:5px 0; font-size:12px; font-weight:bold;">Üst Çene</p>
         <div class="tooth-grid">
             {% for d in ['18','17','16','15','14','13','12','11','21','22','23','24','25','26','27','28'] %}
             <div class="tooth-btn" onclick="disSec('{{ d }}')">{{ d }}</div>
@@ -753,7 +894,7 @@ function fiyatGetir() {
             <div class="tooth-btn" onclick="disSec('{{ d }}')">{{ d }}</div>
             {% endfor %}
         </div>
-        <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#555; text-align:right;">Alt Çene</p>
+        <p style="margin:5px 0; font-size:12px; font-weight:bold; text-align:right;">Alt Çene</p>
     </div>
 
     <!-- TARİFEDEN OTOMATİK FİYAT HESAPLAYICI DİŞ İŞLEMİ EKLEME -->
@@ -768,7 +909,7 @@ function fiyatGetir() {
             {% endfor %}
         </select>
         
-        <label style="font-size:12px; color:#666;">Uygulanacak Tutar (TL):</label>
+        <label style="font-size:12px; opacity:0.8;">Uygulanacak Tutar (TL):</label>
         <input type="number" id="ucret_input" name="ucret" placeholder="Ücret (TL)" required>
 
         <button type="submit">İşlemi ve Ücreti Kaydet</button>
@@ -789,11 +930,11 @@ function fiyatGetir() {
         {% endfor %}
     </table>
 
-    <hr style="margin:30px 0;">
+    <hr style="margin:30px 0; border-color: var(--border-color);">
 
     <!-- ÖNCE / SONRA FOTOĞRAF GALERİSİ -->
     <h3 style="color:#007bff;">📸 Öncesi / Sonrası Tedavi Fotoğrafları</h3>
-    <form action="/foto-ekle/{{ hasta['id'] }}" method="POST" enctype="multipart/form-data" style="background:#e9ecef;">
+    <form action="/foto-ekle/{{ hasta['id'] }}" method="POST" enctype="multipart/form-data">
         <label><b>Fotoğraf Tipi:</b></label>
         <select name="tip">
             <option value="once">Tedavi Öncesi (Before)</option>
@@ -818,7 +959,7 @@ function fiyatGetir() {
             {% endif %}
         </div>
         {% else %}
-        <p style="color:gray;">Henüz yüklenmiş fotoğraf yok.</p>
+        <p style="opacity:0.7;">Henüz yüklenmiş fotoğraf yok.</p>
         {% endfor %}
     </div>
 
@@ -830,11 +971,11 @@ HASTA_RAPOR_HTML = '''
 <html lang="tr">
 <head><meta charset="UTF-8"><title>Reçete ve Rapor</title>
 <style>
-body{font-family:Arial;padding:40px;color:#333; max-width:800px; margin:auto;}
+body{font-family:Arial;padding:40px;color:#333; max-width:800px; margin:auto; background:white !important;}
 .header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:20px}
 .box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}
-table{width:100%;border-collapse:collapse;margin-top:15px}
-th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
+table{width:100%;border-collapse:collapse;margin-top:15px; background:white;}
+th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee; color:#333;}
 .print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}
 .recete-box{background:#e8f4fd; border:1px dashed #007bff; padding:15px; border-radius:8px; margin-top:20px;}
 .gallery { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 15px; }
@@ -912,18 +1053,23 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
 HASTA_GIRIS_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Hasta Girişi</title><style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:400px;margin:60px auto;background:white;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Hasta Girişi</title>
+''' + DARK_MODE_STYLE + '''
+<style>body{font-family:Arial;padding:20px;text-align:center}.box{max-width:400px;margin:60px auto;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#28a745;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
 <body>
+<div style="text-align: right; max-width: 400px; margin: auto;">
+    <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+</div>
 <div class="box">
     ''' + LOGO_HTML + '''
     <h2>Hasta Takip Paneli</h2>
-    <p style="color:#666; font-size:14px;">Telefon numaranız veya TC Kimlik numaranız ile giriş yapabilirsiniz.</p>
+    <p style="opacity:0.8; font-size:14px;">Telefon numaranız veya TC Kimlik numaranız ile giriş yapabilirsiniz.</p>
     {% if hata %}<p style="color:red; font-size:14px;">{{ hata }}</p>{% endif %}
     <form method="POST">
         <input type="text" name="girdi" placeholder="Telefon veya TC Kimlik No" required>
         <button type="submit">Randevumu Göster</button>
     </form>
-    <br><a href="/" style="color:#666;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
+    <br><a href="/" style="color:#007bff;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
 </div>
 </body></html>
 '''
@@ -931,10 +1077,15 @@ HASTA_GIRIS_HTML = '''
 HASTA_PROFIL_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Hasta Paneli</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.card{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#007bff;color:white}.gallery{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.photo-card{border:1px solid #ddd;padding:5px;width:120px;text-align:center}.photo-card img{width:100%;height:90px;object-fit:cover}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Hasta Paneli</title>
+''' + DARK_MODE_STYLE + '''
+<style>body{font-family:Arial;padding:10px;}.container{max-width:600px;margin:auto;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.card{padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff; border:1px solid var(--border-color);}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}.gallery{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.photo-card{border:1px solid var(--border-color);padding:5px;width:120px;text-align:center}.photo-card img{width:100%;height:90px;object-fit:cover}</style></head>
 <body>
 <div class="container">
-    <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Çıkış</a>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Çıkış</a>
+        <button id="theme-toggle-btn" class="theme-toggle-btn" onclick="toggleTheme()">🌙 Karanlık Mod</button>
+    </div>
     <h2 style="color:#007bff;">🦷 {{ ayar['klinik_adi'] }}</h2>
     <div class="card">
         <h3 style="margin-top:0;">Sayın {{ hasta['ad_soyad'] }}</h3>
@@ -951,7 +1102,7 @@ HASTA_PROFIL_HTML = '''
         {% endfor %}
     </table>
     {% else %}
-    <p style="color:gray;">Kayıtlı tedavi bulunmuyor.</p>
+    <p style="opacity:0.7;">Kayıtlı tedavi bulunmuyor.</p>
     {% endif %}
 
     {% if fotolar %}
