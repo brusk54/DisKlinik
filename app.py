@@ -44,7 +44,6 @@ def init_db():
         )
     ''')
     
-    # Sütun kontrolü ve eksikse ekleme
     cursor.execute("PRAGMA table_info(hastalar)")
     sutunlar = [row[1] for row in cursor.fetchall()]
     
