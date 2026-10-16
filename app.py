@@ -498,20 +498,30 @@ import sqlite3
 import os
 
 # Veritabani ve klinik_id kontrolu
+import sqlite3
+import os
+
+# Veritabani ve eksik sutunlarin kontrolu / eklenmesi
 def check_and_database_setup():
     db_path = 'klinik.db'
     if os.path.exists(db_path):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # Hastalar tablosundaki mevcut sutunlari al
         cursor.execute("PRAGMA table_info(hastalar);")
         columns = [col[1] for col in cursor.fetchall()]
-        if columns and 'klinik_id' not in columns:
-            cursor.execute("ALTER TABLE hastalar ADD COLUMN klinik_id INTEGER;")
+        
+        # Eksik sutunlari kontrol et ve ekle
+        if columns:
+            if 'klinik_id' not in columns:
+                cursor.execute("ALTER TABLE hastalar ADD COLUMN klinik_id INTEGER;")
+            if 'randevu_tarihi' not in columns:
+                cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_tarihi TEXT;")
+            if 'randevu_saati' not in columns:
+                cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_saati TEXT;")
             conn.commit()
+            
         conn.close()
 
 check_and_database_setup()
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
