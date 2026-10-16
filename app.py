@@ -7,12 +7,14 @@ app.secret_key = 'klinik360_gizli_anahtar'
 
 DOKTOR_SIFRE = "1234"
 
+# Kurumsal Şık Diş Logomuz
+LOGO_URL = "https://images.unsplash.com/photo-1606811841689-23dfddce6395?auto=format&fit=crop&w=500&q=80"
+
 def get_db():
     conn = sqlite3.connect('klinik.db')
     conn.row_factory = sqlite3.Row
     return conn
 
-# Veritabanı Otomatik Güncelleme ve Sütun Kontrolü
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -44,9 +46,7 @@ def init_db():
         )
     ''')
     
-    # Eksik olabilecek yeni sütunları güvenle ekle
     sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(hastalar)").fetchall()]
-    
     if "tc_no" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN tc_no TEXT")
     if "dogum_tarihi" not in sutunlar:
@@ -67,7 +67,7 @@ init_db()
 
 @app.route('/')
 def index():
-    return render_template_string(GIRIS_SECIM_HTML)
+    return render_template_string(GIRIS_SECIM_HTML, logo=LOGO_URL)
 
 @app.route('/doktor-giris', methods=['GET', 'POST'])
 def doktor_giris():
@@ -106,7 +106,7 @@ def doktor_panel():
     randevular = cursor.fetchall()
 
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, logo=LOGO_URL)
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -203,7 +203,7 @@ def hasta_detay(hasta_id):
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -233,7 +233,7 @@ def hasta_rapor(hasta_id):
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -252,7 +252,7 @@ def hasta_giris():
         else:
             hata = "Girdiğiniz bilgilere ait kayıt bulunamadı."
         conn.close()
-    return render_template_string(HASTA_GIRIS_HTML, hata=hata)
+    return render_template_string(HASTA_GIRIS_HTML, hata=hata, logo=LOGO_URL)
 
 @app.route('/hasta-profil')
 def hasta_profil():
@@ -267,7 +267,7 @@ def hasta_profil():
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, logo=LOGO_URL)
 
 # --- HTML TEMPLATES ---
 
@@ -281,7 +281,7 @@ GIRIS_SECIM_HTML = '''
     <style>
         body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; text-align: center; color: #333; }
         .box { max-width: 450px; margin: 50px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .logo { max-width: 240px; width: 100%; border-radius: 8px; margin-bottom: 15px; }
+        .logo { max-width: 220px; width: 100%; height: auto; border-radius: 8px; margin-bottom: 15px; object-fit: contain; }
         .btn { display: block; width: 100%; padding: 14px; margin: 15px 0; border-radius: 8px; text-decoration: none; font-size: 16px; font-weight: bold; color: white; box-sizing: border-box; }
         .btn-doktor { background: #007bff; }
         .btn-hasta { background: #28a745; }
@@ -289,7 +289,7 @@ GIRIS_SECIM_HTML = '''
 </head>
 <body>
     <div class="box">
-        <img class="logo" src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80">
+        <img class="logo" src="{{ logo }}" alt="Klinik360 Logo">
         <h2>Klinik360 Portalı</h2>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
@@ -324,7 +324,7 @@ DOKTOR_PANEL_HTML = '''
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
 .container{max-width:950px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}
 .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:15px}
-.logo-container img{max-width:150px}
+.logo-container img{max-width:140px; height:auto;}
 .takvim-box{background:#e3f2fd;padding:12px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
 form{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
@@ -340,7 +340,7 @@ th{background:#007bff;color:white}
 <body>
 <div class="container">
     <div class="header">
-        <div class="logo-container"><img src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80"></div>
+        <div class="logo-container"><img src="{{ logo }}" alt="Klinik360 Logo"></div>
         <div><span>👩‍⚕️ Doktor Paneli</span> <a href="/doktor-cikis" style="background:#dc3545;color:white;padding:6px 12px;text-decoration:none;border-radius:5px;margin-left:10px;">Çıkış</a></div>
     </div>
 
@@ -499,11 +499,11 @@ HASTA_DETAY_HTML = '''
 HASTA_RAPOR_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Rapor</title><style>body{font-family:Arial;padding:40px;color:#333}.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:30px}.logo{max-width:150px}.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}@media print{.print-btn{display:none}}</style></head>
+<head><meta charset="UTF-8"><title>Rapor</title><style>body{font-family:Arial;padding:40px;color:#333}.header{text-align:center;border-bottom:2px solid #007bff;padding-bottom:10px;margin-bottom:30px}.logo{max-width:130px; height:auto;}.box{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}.print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}@media print{.print-btn{display:none}}</style></head>
 <body>
 <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır / PDF İndir</button>
 <div class="header">
-    <img class="logo" src="https://images.unsplash.com/photo-1588776814546-1ffcf47267a5?auto=format&fit=crop&w=500&q=80">
+    <img class="logo" src="{{ logo }}" alt="Klinik360 Logo">
     <h2>KLİNİK360 DİŞ SAĞLIĞI & TEDAVİ RAPORU</h2>
 </div>
 <div class="box">
