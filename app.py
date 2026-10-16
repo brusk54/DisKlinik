@@ -1,9 +1,14 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = 'klinik360_gizli_anahtar'
+
+UPLOAD_FOLDER = 'static/uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 DOKTOR_SIFRE = "1234"
 
@@ -40,6 +45,17 @@ def init_db():
             dis_no TEXT,
             islem_turu TEXT,
             ucret REAL,
+            FOREIGN KEY (hasta_id) REFERENCES hastalar (id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hasta_fotolar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hasta_id INTEGER,
+            tip TEXT,
+            dosya_adi TEXT,
+            tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (hasta_id) REFERENCES hastalar (id)
         )
     ''')
@@ -110,8 +126,18 @@ def doktor_panel():
     cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC")
     randevular = cursor.fetchall()
 
+    # İstatistikler
+    cursor.execute("SELECT COUNT(*) as toplam FROM hastalar")
+    toplam_hasta = cursor.fetchone()['toplam']
+
+    cursor.execute("SELECT COUNT(*) as toplam FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != ''")
+    toplam_randevu = cursor.fetchone()['toplam']
+
+    cursor.execute("SELECT COUNT(*) as toplam FROM dis_islemleri")
+    toplam_islem = cursor.fetchone()['toplam']
+
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_hasta=toplam_hasta, toplam_randevu=toplam_randevu, toplam_islem=toplam_islem)
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -183,6 +209,7 @@ def hasta_sil(hasta_id):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
+    cursor.execute("DELETE FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
     cursor.execute("DELETE FROM hastalar WHERE id = ?", (hasta_id,))
     conn.commit()
     conn.close()
@@ -200,6 +227,24 @@ def islem_sil(islem_id, hasta_id):
     conn.close()
     return redirect(url_for('hasta_detay', hasta_id=hasta_id))
 
+@app.route('/foto-sil/<int:foto_id>/<int:hasta_id>')
+def foto_sil(foto_id, hasta_id):
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT dosya_adi FROM hasta_fotolar WHERE id = ?", (foto_id,))
+    foto = cursor.fetchone()
+    if foto:
+        dosya_yolu = os.path.join(app.config['UPLOAD_FOLDER'], foto['dosya_adi'])
+        if os.path.exists(dosya_yolu):
+            os.remove(dosya_yolu)
+    cursor.execute("DELETE FROM hasta_fotolar WHERE id = ?", (foto_id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('hasta_detay', hasta_id=hasta_id))
+
 @app.route('/hasta-detay/<int:hasta_id>')
 def hasta_detay(hasta_id):
     if not session.get('doktor_giris'):
@@ -211,8 +256,10 @@ def hasta_detay(hasta_id):
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
+    fotolar = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -233,6 +280,26 @@ def dis_islem_ekle(hasta_id):
     conn.close()
     return redirect(url_for('hasta_detay', hasta_id=hasta_id))
 
+@app.route('/foto-ekle/<int:hasta_id>', methods=['POST'])
+def foto_ekle(hasta_id):
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    tip = request.form.get('tip', 'once')
+    dosya = request.files.get('foto')
+    
+    if dosya and dosya.filename != '':
+        filename = secure_filename(f"hasta_{hasta_id}_{os.urandom(4).hex()}_{dosya.filename}")
+        dosya.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO hasta_fotolar (hasta_id, tip, dosya_adi) VALUES (?, ?, ?)", (hasta_id, tip, filename))
+        conn.commit()
+        conn.close()
+        
+    return redirect(url_for('hasta_detay', hasta_id=hasta_id))
+
 @app.route('/hasta-rapor/<int:hasta_id>')
 def hasta_rapor(hasta_id):
     conn = get_db()
@@ -241,10 +308,12 @@ def hasta_rapor(hasta_id):
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
+    fotolar = cursor.fetchall()
     
     recete_secimi = request.args.get('recete', '')
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, recete_secimi=recete_secimi)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, recete_secimi=recete_secimi)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -277,8 +346,10 @@ def hasta_profil():
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
+    cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
+    fotolar = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar)
 
 # --- HTML TEMPLATES ---
 
@@ -302,7 +373,7 @@ body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 
 <body>
     <div class="box">
         ''' + LOGO_HTML + '''
-        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Diş Klinik Yönetim Sistemi</p>
+        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
@@ -336,6 +407,10 @@ DOKTOR_PANEL_HTML = '''
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
 .container{max-width:1000px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
 .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px}
+.stats-grid{display:grid; grid-template-columns: repeat(3, 1fr); gap:15px; margin-bottom:20px;}
+.stat-card{background:linear-gradient(135deg, #007bff, #00c6ff); color:white; padding:15px; border-radius:10px; text-align:center;}
+.stat-card:nth-child(2){background:linear-gradient(135deg, #28a745, #20c997);}
+.stat-card:nth-child(3){background:linear-gradient(135deg, #ffc107, #ff9800); color:#333;}
 .takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
 form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
@@ -354,6 +429,21 @@ th{background:#007bff;color:white}
     <div class="header">
         <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| Doktor Paneli</span></div>
         <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h4 style="margin:0; font-size:14px;">Toplam Hasta</h4>
+            <p style="margin:5px 0 0 0; font-size:24px; font-weight:bold;">{{ toplam_hasta }}</p>
+        </div>
+        <div class="stat-card">
+            <h4 style="margin:0; font-size:14px;">Aktif Randevular</h4>
+            <p style="margin:5px 0 0 0; font-size:24px; font-weight:bold;">{{ toplam_randevu }}</p>
+        </div>
+        <div class="stat-card">
+            <h4 style="margin:0; font-size:14px;">Yapılan İşlemler</h4>
+            <p style="margin:5px 0 0 0; font-size:24px; font-weight:bold;">{{ toplam_islem }}</p>
+        </div>
     </div>
 
     <div class="takvim-box">
@@ -463,7 +553,7 @@ HASTA_DETAY_HTML = '''
 <head><meta charset="UTF-8"><title>Diş Kartı</title>
 <style>
 body{font-family:Arial;padding:10px;background:#f4f7f6}
-.container{max-width:850px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
+.container{max-width:900px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
 .info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}
 form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}
 input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
@@ -473,11 +563,24 @@ th,td{border:1px solid #ddd;padding:10px;text-align:left}
 th{background:#28a745;color:white}
 .btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right;display:inline-block;}
 .badge-danger{background:#dc3545; color:white; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:bold;}
-</style></head>
+.tooth-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; margin-bottom: 10px; }
+.tooth-btn { background: #e3f2fd; border: 1px solid #007bff; padding: 8px; text-align: center; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; color: #0056b3; }
+.tooth-btn:hover { background: #007bff; color: white; }
+.gallery { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 15px; }
+.photo-card { background: #fff; border: 1px solid #ddd; border-radius: 6px; padding: 10px; width: 200px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+.photo-card img { width: 100%; height: 140px; object-fit: cover; border-radius: 4px; margin-bottom: 8px; }
+</style>
+<script>
+function disSec(no) {
+    document.getElementById('dis_no_input').value = no;
+    document.getElementById('islem_formu_baslik').innerText = "ISO Diş #" + no + " İçin İşlem Ekle";
+}
+</script>
+</head>
 <body><div class="container">
     <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Geri</a>
     <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete & Rapor Al</a>
-    <h1 style="color:#007bff;">🦷 Hasta Diş Kartı & Tedavi Planı</h1>
+    <h1 style="color:#007bff;">🦷 İnteraktif Diş Şeması & Tedavi Planı</h1>
     
     <div class="info-box">
         <h3>{{ hasta['ad_soyad'] }}</h3>
@@ -488,31 +591,30 @@ th{background:#28a745;color:white}
         <p><b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }} | <b>Yaş:</b> {{ hasta['yas'] or '-' }}</p>
         <p><b>Semptomlar:</b> {{ hasta['semptomlar'] or '' }}</p>
         <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
-        <p><b>Alerji:</b> <span style="color:red; font-weight:bold;">{{ hasta['alerji'] or 'Yok' }}</span></p>
+    </div>
+
+    <!-- İNTERAKTİF DİŞ ŞEMASI -->
+    <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #ddd; margin-bottom:20px;">
+        <h3 style="margin-top:0; color:#007bff; text-align:center;">🦷 İnteraktif Çene & Diş Haritası (Tıklayarak Seçin)</h3>
+        <p style="text-align:center; font-size:12px; color:#666;">İşlem yapmak istediğiniz dişe tıklayın.</p>
+        
+        <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#555;">Üst Çene</p>
+        <div class="tooth-grid">
+            {% for d in ['18','17','16','15','14','13','12','11','21','22','23','24','25','26','27','28'] %}
+            <div class="tooth-btn" onclick="disSec('{{ d }}')">{{ d }}</div>
+            {% endfor %}
+        </div>
+        <div class="tooth-grid" style="margin-top:10px;">
+            {% for d in ['48','47','46','45','44','43','42','41','31','32','33','34','35','36','37','38'] %}
+            <div class="tooth-btn" onclick="disSec('{{ d }}')">{{ d }}</div>
+            {% endfor %}
+        </div>
+        <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#555; text-align:right;">Alt Çene</p>
     </div>
 
     <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
-        <h3 style="margin-top:0; color:#007bff;">ISO Diş Numaralandırma & Tedavi Ekle</h3>
-        <select name="dis_no" required>
-            <option value="">-- Diş Seçiniz (ISO Numarası) --</option>
-            <option value="11">11 - Sağ Üst Kesici</option>
-            <option value="12">12 - Sağ Üst Yan Kesici</option>
-            <option value="13">13 - Sağ Üst Köpek</option>
-            <option value="14">14 - Sağ Üst 1. Küçük Azı</option>
-            <option value="15">15 - Sağ Üst 2. Küçük Azı</option>
-            <option value="16">16 - Sağ Üst 1. Büyük Azı</option>
-            <option value="17">17 - Sağ Üst 2. Büyük Azı</option>
-            <option value="21">21 - Sol Üst Kesici</option>
-            <option value="22">22 - Sol Üst Yan Kesici</option>
-            <option value="23">23 - Sol Üst Köpek</option>
-            <option value="24">24 - Sol Üst 1. Küçük Azı</option>
-            <option value="25">25 - Sol Üst 2. Küçük Azı</option>
-            <option value="26">26 - Sol Üst 1. Büyük Azı</option>
-            <option value="31">31 - Sol Alt Kesici</option>
-            <option value="36">36 - Sol Alt 1. Büyük Azı</option>
-            <option value="41">41 - Sağ Alt Kesici</option>
-            <option value="46">46 - Sağ Alt 1. Büyük Azı</option>
-        </select>
+        <h3 id="islem_formu_baslik" style="margin-top:0; color:#007bff;">Diş İşlemi Ekle</h3>
+        <input type="text" id="dis_no_input" name="dis_no" placeholder="Diş Numarası (Yukarıdan Tıklayın veya Yazın)" required>
         <select name="islem_turu" required>
             <option value="">-- Yapılan İşlem / Tedavi --</option>
             <option value="Kompozit Dolgu">Kompozit Dolgu</option>
@@ -535,6 +637,38 @@ th{background:#28a745;color:white}
         </tr>
         {% endfor %}
     </table>
+
+    <hr style="margin:30px 0;">
+
+    <!-- ÖNCE / SONRA FOTOĞRAF GALERİSİ -->
+    <h3 style="color:#007bff;">📸 Öncesi / Sonrası Tedavi Fotoğrafları</h3>
+    <form action="/foto-ekle/{{ hasta['id'] }}" method="POST" enctype="multipart/form-data" style="background:#e9ecef;">
+        <label><b>Fotoğraf Tipi:</b></label>
+        <select name="tip">
+            <option value="once">Tedavi Öncesi (Before)</option>
+            <option value="sonra">Tedavi Sonrası (After)</option>
+        </select>
+        <input type="file" name="foto" accept="image/*" required>
+        <button type="submit" style="background:#17a2b8;">Fotoğrafı Yükle</button>
+    </form>
+
+    <div class="gallery">
+        {% for f in fotolar %}
+        <div class="photo-card">
+            <span style="font-size:12px; font-weight:bold; color: {% if f['tip'] == 'once' %}#dc3545{% else %}#28a745{% endif %};">
+                {{ 'Tedavi Öncesi' if f['tip'] == 'once' else 'Tedavi Sonrası' }}
+            </span>
+            <a href="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" target="_blank">
+                <img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" alt="Fotoğraf">
+            </a>
+            <br>
+            <a href="/foto-sil/{{ f['id'] }}/{{ hasta['id'] }}" style="color:red; font-size:12px; text-decoration:none;" onclick="return confirm('Fotoğrafı silmek istiyor musunuz?')">🗑️ Sil</a>
+        </div>
+        {% else %}
+        <p style="color:gray;">Henüz yüklenmiş fotoğraf yok.</p>
+        {% endfor %}
+    </div>
+
 </div></body></html>
 '''
 
@@ -550,6 +684,9 @@ table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
 .print-btn{background:#28a745;color:white;padding:10px 20px;border:none;border-radius:5px;cursor:pointer;font-size:16px;margin-bottom:20px}
 .recete-box{background:#e8f4fd; border:1px dashed #007bff; padding:15px; border-radius:8px; margin-top:20px;}
+.gallery { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 15px; }
+.photo-card { border: 1px solid #ddd; padding: 5px; width: 150px; text-align: center; }
+.photo-card img { width: 100%; height: 100px; object-fit: cover; }
 @media print{.print-btn, .no-print{display:none}}
 </style></head>
 <body>
@@ -578,6 +715,18 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
     <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td></tr>
     {% endfor %}
 </table>
+
+{% if fotolar %}
+<h3>Tedavi Fotoğrafları</h3>
+<div class="gallery">
+    {% for f in fotolar %}
+    <div class="photo-card">
+        <small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br>
+        <img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}">
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="no-print" style="margin-top:25px;">
     <h3>💊 Hazır Reçete Şablonu Seç</h3>
@@ -629,7 +778,7 @@ HASTA_GIRIS_HTML = '''
 HASTA_PROFIL_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Hasta Paneli</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.card{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#007bff;color:white}</style></head>
+<head><meta charset="UTF-8"><title>Hasta Paneli</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:600px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}.card{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#007bff;color:white}.gallery{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.photo-card{border:1px solid #ddd;padding:5px;width:120px;text-align:center}.photo-card img{width:100%;height:90px;object-fit:cover}</style></head>
 <body>
 <div class="container">
     <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Çıkış</a>
@@ -651,8 +800,21 @@ HASTA_PROFIL_HTML = '''
     {% else %}
     <p style="color:gray;">Kayıtlı tedavi bulunmuyor.</p>
     {% endif %}
-</div>
-</body></html>
+
+    {% if fotolar %}
+    <h3 style="margin-top:20px;">📸 Tedavi Fotoğraflarınız</h3>
+    <div class="gallery">
+        {% for f in fotolar %}
+        <div class="photo-card">
+            <small>{{ 'Öncesi' if f['tip'] == 'once' else 'Sonrası' }}</small><br>
+            <a href="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" target="_blank">
+                <img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}">
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div></body></html>
 '''
 
 if __name__ == '__main__':
