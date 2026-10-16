@@ -7,12 +7,16 @@ app.secret_key = 'klinik360_gizli_anahtar'
 
 DOKTOR_SIFRE = "1234"
 
-# Veritabanı ve Eksik Sütun Kontrolü (Migration)
-def init_db():
+def get_db():
     conn = sqlite3.connect('klinik.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Veritabanı Otomatik Güncelleme / Kurulum
+def init_db():
+    conn = get_db()
     cursor = conn.cursor()
     
-    # Hastalar tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hastalar (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +31,6 @@ def init_db():
         )
     ''')
     
-    # Diş işlemleri tablosu
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS dis_islemleri (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,22 +42,18 @@ def init_db():
         )
     ''')
     
-    # Eski veritabanlarında eksik olabilecek sütunları güvenle ekle
-    try:
+    # Eksik Sütunları Güvenli Ekleme
+    sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(hastalar)").fetchall()]
+    
+    if "randevu_tarihi" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_tarihi TEXT")
-    except sqlite3.OperationalError:
-        pass # Sütun zaten varsa hata verme, devam et
-
-    try:
+    if "alerji" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN alerji TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    try:
+    if "ozel_not" not in sutunlar:
         cursor.execute("ALTER TABLE hastalar ADD COLUMN ozel_not TEXT")
-    except sqlite3.OperationalError:
-        pass
-
+    if "semptomlar" not in sutunlar:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN semptomlar TEXT")
+        
     conn.commit()
     conn.close()
 
@@ -86,12 +85,12 @@ def doktor_panel():
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     
     arama = request.args.get('arama', '')
     if arama:
-        cursor.execute("SELECT * FROM hastalar WHERE ad_soyad LIKE ? OR telefon LIKE ?", ('%' + arama + '%', '%' + arama + '%'))
+        cursor.execute("SELECT * FROM hastalar WHERE ad_soyad LIKE ? OR telefon LIKE ? ORDER BY id DESC", ('%' + arama + '%', '%' + arama + '%'))
     else:
         cursor.execute("SELECT * FROM hastalar ORDER BY id DESC")
         
@@ -108,16 +107,16 @@ def ekle():
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    ad_soyad = request.form['ad_soyad']
-    telefon = request.form['telefon']
-    yas = request.form['yas']
+    ad_soyad = request.form.get('ad_soyad', '')
+    telefon = request.form.get('telefon', '')
+    yas = request.form.get('yas', '')
     secilen_semptomlar = request.form.getlist('semptomlar')
     semptomlar_str = ", ".join(secilen_semptomlar) if secilen_semptomlar else "Belirtilmemiş"
     ozel_not = request.form.get('ozel_not', '')
-    alerji = request.form['alerji']
-    randevu_tarihi = request.form['randevu_tarihi']
+    alerji = request.form.get('alerji', '')
+    randevu_tarihi = request.form.get('randevu_tarihi', '')
 
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO hastalar (ad_soyad, telefon, yas, semptomlar, ozel_not, alerji, randevu_tarihi)
@@ -132,16 +131,16 @@ def hasta_duzenle(hasta_id):
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
 
     if request.method == 'POST':
-        ad_soyad = request.form['ad_soyad']
-        telefon = request.form['telefon']
-        yas = request.form['yas']
-        ozel_not = request.form['ozel_not']
-        alerji = request.form['alerji']
-        randevu_tarihi = request.form['randevu_tarihi']
+        ad_soyad = request.form.get('ad_soyad', '')
+        telefon = request.form.get('telefon', '')
+        yas = request.form.get('yas', '')
+        ozel_not = request.form.get('ozel_not', '')
+        alerji = request.form.get('alerji', '')
+        randevu_tarihi = request.form.get('randevu_tarihi', '')
 
         cursor.execute('''
             UPDATE hastalar 
@@ -162,7 +161,7 @@ def hasta_sil(hasta_id):
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     cursor.execute("DELETE FROM hastalar WHERE id = ?", (hasta_id,))
@@ -175,7 +174,7 @@ def islem_sil(islem_id, hasta_id):
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM dis_islemleri WHERE id = ?", (islem_id,))
     conn.commit()
@@ -187,7 +186,7 @@ def hasta_detay(hasta_id):
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
     hasta = cursor.fetchone()
@@ -201,11 +200,11 @@ def dis_islem_ekle(hasta_id):
     if not session.get('doktor_giris'):
         return redirect(url_for('doktor_giris'))
         
-    dis_no = request.form['dis_no']
-    islem_turu = request.form['islem_turu']
-    ucret = request.form['ucret']
+    dis_no = request.form.get('dis_no', '')
+    islem_turu = request.form.get('islem_turu', '')
+    ucret = request.form.get('ucret', 0)
     
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO dis_islemleri (hasta_id, dis_no, islem_turu, ucret)
@@ -217,7 +216,7 @@ def dis_islem_ekle(hasta_id):
 
 @app.route('/hasta-rapor/<int:hasta_id>')
 def hasta_rapor(hasta_id):
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
     hasta = cursor.fetchone()
@@ -231,13 +230,14 @@ def hasta_giris():
     hata = None
     if request.method == 'POST':
         telefon = request.form.get('telefon', '').strip()
-        conn = sqlite3.connect('klinik.db')
+        conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM hastalar WHERE telefon LIKE ?", ('%' + telefon + '%',))
         hasta = cursor.fetchone()
         
         if hasta:
-            session['hasta_id'] = hasta[0]
+            session['hasta_id'] = hasta['id']
+            conn.close()
             return redirect(url_for('hasta_profil'))
         else:
             hata = "Kayıt bulunamadı."
@@ -250,7 +250,7 @@ def hasta_profil():
     if not hasta_id:
         return redirect(url_for('hasta_giris'))
         
-    conn = sqlite3.connect('klinik.db')
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM hastalar WHERE id = ?", (hasta_id,))
     hasta = cursor.fetchone()
@@ -339,7 +339,7 @@ th{background:#007bff;color:white}
         {% if randevular %}
             <ul style="margin:0;padding-left:20px;">
             {% for r in randevular %}
-                <li><b>{{ r[3] }}</b> - {{ r[1] }} (Tel: {{ r[2] }})</li>
+                <li><b>{{ r['randevu_tarihi'] }}</b> - {{ r['ad_soyad'] }} (Tel: {{ r['telefon'] }})</li>
             {% endfor %}
             </ul>
         {% else %}
@@ -377,15 +377,19 @@ th{background:#007bff;color:white}
         <tr><th>Ad Soyad</th><th>Telefon</th><th>Semptom & Not</th><th>Randevu</th><th>İşlemler</th></tr>
         {% for h in hastalar %}
         <tr>
-            <td><b>{{ h[1] }}</b><br><small>Yaş: {{ h[3] }}</small></td>
-            <td>{{ h[2] }}</td>
-            <td><b>Semptom:</b> {{ h[4] }}<br>{% if h[5] %}<b>Not:</b> {{ h[5] }}{% endif %}</td>
-            <td>{{ h[7] }}</td>
+            <td><b>{{ h['ad_soyad'] }}</b><br><small>Yaş: {{ h['yas'] or '' }}</small></td>
+            <td>{{ h['telefon'] }}</td>
             <td>
-                <a class="btn-sm btn-info" href="/hasta-detay/{{ h[0] }}">Diş Kartı</a>
-                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h[2] }}?text=Sayın%20{{ h[1] }},%20Klinik360%20randevunuzu%20hatırlatırız." target="_blank">WhatsApp</a>
-                <a class="btn-sm btn-edit" href="/hasta-duzenle/{{ h[0] }}">Düzenle</a>
-                <a class="btn-sm btn-del" href="/hasta-sil/{{ h[0] }}" onclick="return confirm('Silmek istediğinize emin misiniz?')">Sil</a>
+                <b>Semptom:</b> {{ h['semptomlar'] or '' }}<br>
+                {% if h['ozel_not'] %}<b>Not:</b> {{ h['ozel_not'] }}<br>{% endif %}
+                {% if h['alerji'] %}<small style="color:red;">Alerji: {{ h['alerji'] }}</small>{% endif %}
+            </td>
+            <td>{{ h['randevu_tarihi'] or '' }}</td>
+            <td>
+                <a class="btn-sm btn-info" href="/hasta-detay/{{ h['id'] }}">Diş Kartı</a>
+                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h['telefon'] }}?text=Sayın%20{{ h['ad_soyad'] }},%20Klinik360%20randevunuzu%20hatırlatırız." target="_blank">WhatsApp</a>
+                <a class="btn-sm btn-edit" href="/hasta-duzenle/{{ h['id'] }}">Düzenle</a>
+                <a class="btn-sm btn-del" href="/hasta-sil/{{ h['id'] }}" onclick="return confirm('Silmek istediğinize emin misiniz?')">Sil</a>
             </td>
         </tr>
         {% endfor %}
@@ -401,12 +405,12 @@ HASTA_DUZENLE_HTML = '''
 <body><div class="box">
     <h2>✏️ Hasta Bilgilerini Düzenle</h2>
     <form method="POST">
-        <label>Ad Soyad:</label><input type="text" name="ad_soyad" value="{{ hasta[1] }}" required>
-        <label>Telefon:</label><input type="text" name="telefon" value="{{ hasta[2] }}" required>
-        <label>Yaş:</label><input type="number" name="yas" value="{{ hasta[3] }}">
-        <label>Doktor Notu:</label><textarea name="ozel_not" rows="3">{{ hasta[5] }}</textarea>
-        <label>Alerji:</label><input type="text" name="alerji" value="{{ hasta[6] }}">
-        <label>Randevu Tarihi:</label><input type="date" name="randevu_tarihi" value="{{ hasta[7] }}">
+        <label>Ad Soyad:</label><input type="text" name="ad_soyad" value="{{ hasta['ad_soyad'] }}" required>
+        <label>Telefon:</label><input type="text" name="telefon" value="{{ hasta['telefon'] }}" required>
+        <label>Yaş:</label><input type="number" name="yas" value="{{ hasta['yas'] or '' }}">
+        <label>Doktor Notu:</label><textarea name="ozel_not" rows="3">{{ hasta['ozel_not'] or '' }}</textarea>
+        <label>Alerji:</label><input type="text" name="alerji" value="{{ hasta['alerji'] or '' }}">
+        <label>Randevu Tarihi:</label><input type="date" name="randevu_tarihi" value="{{ hasta['randevu_tarihi'] or '' }}">
         <button type="submit">GÜNCELLE</button>
     </form>
     <br><a href="/doktor-panel" style="color:gray;">İptal</a>
@@ -419,15 +423,16 @@ HASTA_DETAY_HTML = '''
 <head><meta charset="UTF-8"><title>Diş Kartı</title><style>body{font-family:Arial;padding:10px;background:#f4f7f6}.container{max-width:800px;margin:auto;background:white;padding:20px;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1)}.info-box{background:#e9ecef;padding:15px;border-radius:8px;margin-bottom:20px}form{background:#f8f9fa;padding:15px;border-radius:8px;border:1px solid #ddd;margin-bottom:20px}input,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#007bff;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#28a745;color:white}.btn-pdf{background:#17a2b8;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;float:right}</style></head>
 <body><div class="container">
     <a href="/doktor-panel" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:5px;">⬅ Geri</a>
-    <a class="btn-pdf" href="/hasta-rapor/{{ hasta[0] }}" target="_blank">📄 PDF / Reçete Çıktısı Al</a>
+    <a class="btn-pdf" href="/hasta-rapor/{{ hasta['id'] }}" target="_blank">📄 PDF / Reçete Çıktısı Al</a>
     <h1 style="color:#007bff;">🦷 Hasta Diş Kartı</h1>
     <div class="info-box">
-        <h3>{{ hasta[1] }}</h3>
-        <p><b>Telefon:</b> {{ hasta[2] }} | <b>Yaş:</b> {{ hasta[3] }}</p>
-        <p><b>Semptomlar:</b> {{ hasta[4] }}</p>
-        <p><b>Doktor Notu:</b> {{ hasta[5] }}</p>
+        <h3>{{ hasta['ad_soyad'] }}</h3>
+        <p><b>Telefon:</b> {{ hasta['telefon'] }} | <b>Yaş:</b> {{ hasta['yas'] or '' }}</p>
+        <p><b>Semptomlar:</b> {{ hasta['semptomlar'] or '' }}</p>
+        <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
+        <p><b>Alerji:</b> {{ hasta['alerji'] or 'Yok' }}</p>
     </div>
-    <form action="/dis_islem_ekle/{{ hasta[0] }}" method="POST">
+    <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
         <h3>Diş Tedavisi / İşlem Ekle</h3>
         <select name="dis_no" required>
             <option value="">-- Diş Seçiniz (ISO Numarası) --</option>
@@ -466,8 +471,8 @@ HASTA_DETAY_HTML = '''
         <tr><th>Diş No</th><th>Tedavi</th><th>Ücret</th><th>Eylem</th></tr>
         {% for i in islemler %}
         <tr>
-            <td><b>Diş #{{ i[2] }}</b></td><td>{{ i[3] }}</td><td>{{ i[4] }} TL</td>
-            <td><a href="/islem-sil/{{ i[0] }}/{{ hasta[0] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
+            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ i['ucret'] }} TL</td>
+            <td><a href="/islem-sil/{{ i['id'] }}/{{ hasta['id'] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
         </tr>
         {% endfor %}
     </table>
@@ -486,15 +491,15 @@ HASTA_RAPOR_HTML = '''
 </div>
 <div class="box">
     <h3>Hasta Bilgileri</h3>
-    <p><b>Adı Soyadı:</b> {{ hasta[1] }} | <b>Telefon:</b> {{ hasta[2] }} | <b>Yaş:</b> {{ hasta[3] }}</p>
-    <p><b>Alerji / Özel Durum:</b> {{ hasta[6] if hasta[6] else 'Yok' }}</p>
-    <p><b>Doktor Notu:</b> {{ hasta[5] }}</p>
+    <p><b>Adı Soyadı:</b> {{ hasta['ad_soyad'] }} | <b>Telefon:</b> {{ hasta['telefon'] }} | <b>Yaş:</b> {{ hasta['yas'] or '' }}</p>
+    <p><b>Alerji / Özel Durum:</b> {{ hasta['alerji'] or 'Yok' }}</p>
+    <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
 </div>
 <h3>Uygulanan Tedaviler</h3>
 <table>
     <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th></tr>
     {% for i in islemler %}
-    <tr><td>Diş #{{ i[2] }}</td><td>{{ i[3] }}</td></tr>
+    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td></tr>
     {% endfor %}
 </table>
 </body></html>
@@ -526,16 +531,16 @@ HASTA_PROFIL_HTML = '''
     <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:5px;">⬅ Çıkış</a>
     <h2>🦷 Klinik360 Hasta Bilgi Kartı</h2>
     <div class="card">
-        <h3>Sayın {{ hasta[1] }}</h3>
-        <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta[7] if hasta[7] else 'Yok' }}</span></p>
-        <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta[5] if hasta[5] else 'Yok' }}</p>
+        <h3>Sayın {{ hasta['ad_soyad'] }}</h3>
+        <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
+        <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
     </div>
     <h3>🦷 Tedavileriniz</h3>
     {% if islemler %}
     <table>
         <tr><th>Diş No</th><th>Yapılan Tedavi</th></tr>
         {% for i in islemler %}
-        <tr><td><b>Diş #{{ i[2] }}</b></td><td>{{ i[3] }}</td></tr>
+        <tr><td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td></tr>
         {% endfor %}
     </table>
     {% else %}
