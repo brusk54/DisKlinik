@@ -34,6 +34,7 @@ def init_db():
             alerji TEXT,
             anamnez TEXT,
             randevu_tarihi TEXT,
+            randevu_saati TEXT,
             tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -60,6 +61,45 @@ def init_db():
         )
     ''')
     
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ayarlar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doktor_adi TEXT,
+            klinik_adi TEXT
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fiyat_tarifesi (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            islem_adi TEXT UNIQUE,
+            varsayilan_fiyat REAL
+        )
+    ''')
+    
+    # Varsayılan ayar
+    cursor.execute("SELECT COUNT(*) as cnt FROM ayarlar")
+    if cursor.fetchone()['cnt'] == 0:
+        cursor.execute("INSERT INTO ayarlar (doktor_adi, klinik_adi) VALUES (?, ?)", ("Dt. Mehmet Güzel", "Klinik360 Diş Polikliniği"))
+        conn.commit()
+        
+    # Varsayılan Fiyat Tarifesi
+    cursor.execute("SELECT COUNT(*) as cnt FROM fiyat_tarifesi")
+    if cursor.fetchone()['cnt'] == 0:
+        sabit_fiyatlar = [
+            ("Kompozit Dolgu", 1500),
+            ("Kanal Tedavisi", 3000),
+            ("Diş Çekimi", 1000),
+            ("Diş Taşı Temizliği", 1200),
+            ("Porselen Kron Kaplama", 4500),
+            ("İmplant", 12000),
+            ("Zirkonyum Kaplama", 5500),
+            ("Diş Beyazlatma", 4000)
+        ]
+        cursor.executemany("INSERT INTO fiyat_tarifesi (islem_adi, varsayilan_fiyat) VALUES (?, ?)", sabit_fiyatlar)
+        conn.commit()
+    
+    # Tablo güncelleme kontrolleri
     cursor.execute("PRAGMA table_info(hastalar)")
     sutunlar = [row[1] for row in cursor.fetchall()]
     
@@ -67,6 +107,7 @@ def init_db():
         "tc_no": "TEXT",
         "dogum_tarihi": "TEXT",
         "randevu_tarihi": "TEXT",
+        "randevu_saati": "TEXT",
         "alerji": "TEXT",
         "ozel_not": "TEXT",
         "semptomlar": "TEXT",
@@ -115,6 +156,9 @@ def doktor_panel():
     conn = get_db()
     cursor = conn.cursor()
     
+    cursor.execute("SELECT * FROM ayarlar WHERE id = 1")
+    ayar = cursor.fetchone()
+    
     arama = request.args.get('arama', '')
     if arama:
         cursor.execute("SELECT * FROM hastalar WHERE ad_soyad LIKE ? OR telefon LIKE ? OR tc_no LIKE ? ORDER BY id DESC", ('%' + arama + '%', '%' + arama + '%', '%' + arama + '%'))
@@ -123,10 +167,10 @@ def doktor_panel():
         
     hastalar = cursor.fetchall()
 
-    cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC")
+    # Randevu Saatli Takvim
+    cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi, randevu_saati FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC, randevu_saati ASC")
     randevular = cursor.fetchall()
 
-    # İstatistikler
     cursor.execute("SELECT COUNT(*) as toplam FROM hastalar")
     toplam_hasta = cursor.fetchone()['toplam']
 
@@ -136,8 +180,28 @@ def doktor_panel():
     cursor.execute("SELECT COUNT(*) as toplam FROM dis_islemleri")
     toplam_islem = cursor.fetchone()['toplam']
 
+    cursor.execute("SELECT * FROM fiyat_tarifesi ORDER BY islem_adi ASC")
+    tarifeler = cursor.fetchall()
+
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_hasta=toplam_hasta, toplam_randevu=toplam_randevu, toplam_islem=toplam_islem)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_hasta=toplam_hasta, toplam_randevu=toplam_randevu, toplam_islem=toplam_islem, ayar=ayar, tarifeler=tarifeler)
+
+@app.route('/fiyat-guncelle', methods=['POST'])
+def fiyat_guncelle():
+    if not session.get('doktor_giris'):
+        return redirect(url_for('doktor_giris'))
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    for key, val in request.form.items():
+        if key.startswith('fiyat_'):
+            tarife_id = key.split('_')[1]
+            cursor.execute("UPDATE fiyat_tarifesi SET varsayilan_fiyat = ? WHERE id = ?", (val, tarife_id))
+            
+    conn.commit()
+    conn.close()
+    return redirect(url_for('doktor_panel'))
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -158,13 +222,14 @@ def ekle():
     ozel_not = request.form.get('ozel_not', '')
     alerji = request.form.get('alerji', '')
     randevu_tarihi = request.form.get('randevu_tarihi', '')
+    randevu_saati = request.form.get('randevu_saati', '')
 
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO hastalar (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar, anamnez, ozel_not, alerji, randevu_tarihi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar_str, anamnez_str, ozel_not, alerji, randevu_tarihi))
+        INSERT INTO hastalar (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar, anamnez, ozel_not, alerji, randevu_tarihi, randevu_saati)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, semptomlar_str, anamnez_str, ozel_not, alerji, randevu_tarihi, randevu_saati))
     conn.commit()
     conn.close()
     return redirect(url_for('doktor_panel'))
@@ -186,12 +251,13 @@ def hasta_duzenle(hasta_id):
         ozel_not = request.form.get('ozel_not', '')
         alerji = request.form.get('alerji', '')
         randevu_tarihi = request.form.get('randevu_tarihi', '')
+        randevu_saati = request.form.get('randevu_saati', '')
 
         cursor.execute('''
             UPDATE hastalar 
-            SET ad_soyad=?, telefon=?, tc_no=?, dogum_tarihi=?, yas=?, ozel_not=?, alerji=?, randevu_tarihi=?
+            SET ad_soyad=?, telefon=?, tc_no=?, dogum_tarihi=?, yas=?, ozel_not=?, alerji=?, randevu_tarihi=?, randevu_saati=?
             WHERE id=?
-        ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, ozel_not, alerji, randevu_tarihi, hasta_id))
+        ''', (ad_soyad, telefon, tc_no, dogum_tarihi, yas, ozel_not, alerji, randevu_tarihi, randevu_saati, hasta_id))
         conn.commit()
         conn.close()
         return redirect(url_for('doktor_panel'))
@@ -258,8 +324,12 @@ def hasta_detay(hasta_id):
     islemler = cursor.fetchall()
     cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
     fotolar = cursor.fetchall()
+    cursor.execute("SELECT * FROM ayarlar WHERE id = 1")
+    ayar = cursor.fetchone()
+    cursor.execute("SELECT * FROM fiyat_tarifesi ORDER BY islem_adi ASC")
+    tarifeler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, ayar=ayar, tarifeler=tarifeler)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -310,10 +380,12 @@ def hasta_rapor(hasta_id):
     islemler = cursor.fetchall()
     cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
     fotolar = cursor.fetchall()
+    cursor.execute("SELECT * FROM ayarlar WHERE id = 1")
+    ayar = cursor.fetchone()
     
     recete_secimi = request.args.get('recete', '')
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, recete_secimi=recete_secimi)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, recete_secimi=recete_secimi, ayar=ayar)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -348,8 +420,10 @@ def hasta_profil():
     islemler = cursor.fetchall()
     cursor.execute("SELECT * FROM hasta_fotolar WHERE hasta_id = ?", (hasta_id,))
     fotolar = cursor.fetchall()
+    cursor.execute("SELECT * FROM ayarlar WHERE id = 1")
+    ayar = cursor.fetchone()
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, ayar=ayar)
 
 # --- HTML TEMPLATES ---
 
@@ -412,6 +486,7 @@ body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
 .stat-card:nth-child(2){background:linear-gradient(135deg, #28a745, #20c997);}
 .stat-card:nth-child(3){background:linear-gradient(135deg, #ffc107, #ff9800); color:#333;}
 .takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
+.tarife-box{background:#fff3cd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #ffc107}
 form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
 .checkbox-group{background:white;padding:10px;border-radius:5px;border:1px solid #ccc;margin:8px 0}
@@ -420,14 +495,14 @@ button{background:#28a745;color:white;border:none;padding:12px;width:100%;border
 table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left;font-size:13px}
 th{background:#007bff;color:white}
-.btn-sm{padding:5px 10px;text-decoration:none;border-radius:4px;font-size:12px;display:inline-block;margin:2px}
+.btn-sm{padding:5px 8px;text-decoration:none;border-radius:4px;font-size:11px;display:inline-block;margin:2px}
 .btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
 .badge-danger{background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:11px;}
 </style></head>
 <body>
 <div class="container">
     <div class="header">
-        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| Doktor Paneli</span></div>
+        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| {{ ayar['doktor_adi'] }}</span></div>
         <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
     </div>
 
@@ -446,17 +521,39 @@ th{background:#007bff;color:white}
         </div>
     </div>
 
+    <!-- SAAT ÇAKIŞMASIZ RANDEVU TAKVİMİ -->
     <div class="takvim-box">
-        <h3 style="margin-top:0;color:#0056b3;">📆 Yaklaşan Randevu Takvimi</h3>
+        <h3 style="margin-top:0;color:#0056b3;">📅 Saatli Randevu Takvimi</h3>
         {% if randevular %}
-            <ul style="margin:0;padding-left:20px;">
-            {% for r in randevular %}
-                <li><b>{{ r['randevu_tarihi'] }}</b> - {{ r['ad_soyad'] }} (Tel: {{ r['telefon'] }})</li>
-            {% endfor %}
-            </ul>
+            <table style="background:white; margin-top:5px;">
+                <tr><th>Tarih & Saat</th><th>Hasta Adı Soyadı</th><th>İletişim Telefonu</th></tr>
+                {% for r in randevular %}
+                <tr>
+                    <td><b>⏰ {{ r['randevu_tarihi'] }} - {{ r['randevu_saati'] or 'Saat Belirtilmedi' }}</b></td>
+                    <td>{{ r['ad_soyad'] }}</td>
+                    <td>{{ r['telefon'] }}</td>
+                </tr>
+                {% endfor %}
+            </table>
         {% else %}
             <p style="margin:0;color:gray;">Planlanmış randevu yok.</p>
         {% endif %}
+    </div>
+
+    <!-- DİŞ TEDAVİSİ FİYAT TARİFESİ DÜZENLEME -->
+    <div class="tarife-box">
+        <h3 style="margin-top:0; color:#856404;">📋 Kliniğe Özel Diş Tedavisi Fiyat Tarifesi</h3>
+        <form action="/fiyat-guncelle" method="POST" style="background:transparent; padding:0; margin:0;">
+            <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:10px;">
+                {% for t in tarifeler %}
+                <div style="display:flex; align-items:center; gap:5px; background:white; padding:5px 10px; border-radius:5px; border:1px solid #ddd;">
+                    <span style="font-size:12px; font-weight:bold; flex:1;">{{ t['islem_adi'] }}:</span>
+                    <input type="number" name="fiyat_{{ t['id'] }}" value="{{ t['varsayilan_fiyat'] }}" style="width:100px; margin:0; padding:4px;" step="50"> TL
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" style="margin-top:10px; background:#ffc107; color:#333; font-weight:bold;">Fiyat Tarifesini Güncelle</button>
+        </form>
     </div>
 
     <form action="/ekle" method="POST">
@@ -489,7 +586,23 @@ th{background:#007bff;color:white}
 
         <textarea name="ozel_not" placeholder="Doktor Açıklaması / Klinik Not..." rows="2"></textarea>
         <input type="text" name="alerji" placeholder="Alerji Durumu (Örn: Penisilin Alerjisi)">
-        <input type="date" name="randevu_tarihi">
+        
+        <div style="display:flex; gap:10px;">
+            <div style="flex:1;"><label style="font-size:12px; color:#666;">Randevu Tarihi:</label><input type="date" name="randevu_tarihi"></div>
+            <div style="flex:1;"><label style="font-size:12px; color:#666;">Randevu Saati:</label>
+                <select name="randevu_saati">
+                    <option value="">-- Saat Seçin --</option>
+                    <option value="09:00">09:00</option><option value="09:30">09:30</option>
+                    <option value="10:00">10:00</option><option value="10:30">10:30</option>
+                    <option value="11:00">11:00</option><option value="11:30">11:30</option>
+                    <option value="13:00">13:00</option><option value="13:30">13:30</option>
+                    <option value="14:00">14:00</option><option value="14:30">14:30</option>
+                    <option value="15:00">15:00</option><option value="15:30">15:30</option>
+                    <option value="16:00">16:00</option><option value="16:30">16:30</option>
+                    <option value="17:00">17:00</option>
+                </select>
+            </div>
+        </div>
         <button type="submit">Hastayı Kaydet</button>
     </form>
 
@@ -497,9 +610,9 @@ th{background:#007bff;color:white}
         <input type="text" name="arama" placeholder="🔍 İsim, telefon veya TC No ile ara..." value="{{ arama }}">
     </form>
 
-    <h2>Kayıtlı Hastalar</h2>
+    <h2>Kayıtlı Hastalar & WhatsApp Şablonları</h2>
     <table>
-        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Kritik Anamnez & Notlar</th><th>Randevu</th><th>İşlemler</th></tr>
+        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Kritik Anamnez & Notlar</th><th>Randevu</th><th>Hızlı WhatsApp Mesajları</th><th>İşlemler</th></tr>
         {% for h in hastalar %}
         <tr>
             <td><b>{{ h['ad_soyad'] }}</b><br><small>Doğum: {{ h['dogum_tarihi'] or '-' }} (Yaş: {{ h['yas'] or '-' }})</small></td>
@@ -512,10 +625,14 @@ th{background:#007bff;color:white}
                 {% if h['ozel_not'] %}<b>Not:</b> {{ h['ozel_not'] }}<br>{% endif %}
                 {% if h['alerji'] %}<small style="color:red; font-weight:bold;">Alerji: {{ h['alerji'] }}</small>{% endif %}
             </td>
-            <td>{{ h['randevu_tarihi'] or '' }}</td>
+            <td>{{ h['randevu_tarihi'] or '' }}<br><small>{{ h['randevu_saati'] or '' }}</small></td>
+            <td>
+                <!-- WHATSAPP HAZIR ŞABLONLARI -->
+                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h['telefon'] }}?text=Sayin%20{{ h['ad_soyad'] }},%20{{ h['randevu_tarihi'] }}%20günü%20saat%20{{ h['randevu_saati'] or '' }}%20klinik%20randevunuzu%20hatirlatiriz.%20{{ ayar['klinik_adi'] }}%20-%20{{ ayar['doktor_adi'] }}" target="_blank">📲 Randevu Hatırlat</a><br>
+                <a class="btn-sm btn-wa" style="background:#007bff;" href="https://wa.me/9{{ h['telefon'] }}?text=Sayin%20{{ h['ad_soyad'] }},%20bugün%20gerçekleştirdiğimiz%20diş%20tedaviniz%20sonrası%20geçmiş%20olsun%20dileriz.%20Ağrı%20veya%20sorunuz%20olursa%20bize%20ulaşabilirsiniz.%20{{ ayar['doktor_adi'] }}" target="_blank">🩹 Geçmiş Olsun</a>
+            </td>
             <td>
                 <a class="btn-sm btn-info" href="/hasta-detay/{{ h['id'] }}">Diş Kartı</a>
-                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h['telefon'] }}?text=Sayın%20{{ h['ad_soyad'] }},%20Klinik360%20randevunuzu%20hatırlatırız." target="_blank">WhatsApp</a>
                 <a class="btn-sm btn-edit" href="/hasta-duzenle/{{ h['id'] }}">Düzenle</a>
                 <a class="btn-sm btn-del" href="/hasta-sil/{{ h['id'] }}" onclick="return confirm('Silmek istediğinize emin misiniz?')">Sil</a>
             </td>
@@ -529,7 +646,7 @@ th{background:#007bff;color:white}
 HASTA_DUZENLE_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Düzenle</title><style>body{font-family:Arial;padding:20px;background:#f4f7f6}.box{max-width:500px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}input,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}</style></head>
+<head><meta charset="UTF-8"><title>Düzenle</title><style>body{font-family:Arial;padding:20px;background:#f4f7f6}.box{max-width:500px;margin:auto;background:white;padding:25px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}input,textarea,select{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}button{background:#28a745;color:white;border:none;padding:12px;width:100%;border-radius:5px;cursor:pointer;font-size:16px}</style></head>
 <body><div class="box">
     <h2 style="color:#007bff; margin-top:0;">✏️ Hasta Bilgilerini Düzenle</h2>
     <form method="POST">
@@ -541,6 +658,8 @@ HASTA_DUZENLE_HTML = '''
         <label>Doktor Notu:</label><textarea name="ozel_not" rows="3">{{ hasta['ozel_not'] or '' }}</textarea>
         <label>Alerji:</label><input type="text" name="alerji" value="{{ hasta['alerji'] or '' }}">
         <label>Randevu Tarihi:</label><input type="date" name="randevu_tarihi" value="{{ hasta['randevu_tarihi'] or '' }}">
+        <label>Randevu Saati:</label>
+        <input type="text" name="randevu_saati" value="{{ hasta['randevu_saati'] or '' }}" placeholder="Örn: 14:00">
         <button type="submit">GÜNCELLE</button>
     </form>
     <br><a href="/doktor-panel" style="color:gray;text-decoration:none;">⬅ İptal</a>
@@ -574,6 +693,15 @@ th{background:#28a745;color:white}
 function disSec(no) {
     document.getElementById('dis_no_input').value = no;
     document.getElementById('islem_formu_baslik').innerText = "ISO Diş #" + no + " İçin İşlem Ekle";
+}
+
+function fiyatGetir() {
+    var select = document.getElementById('islem_select');
+    var selectedOption = select.options[select.selectedIndex];
+    var fiyat = selectedOption.getAttribute('data-fiyat');
+    if (fiyat) {
+        document.getElementById('ucret_input').value = fiyat;
+    }
 }
 </script>
 </head>
@@ -612,27 +740,32 @@ function disSec(no) {
         <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#555; text-align:right;">Alt Çene</p>
     </div>
 
+    <!-- TARİFEDEN OTOMATİK FİYAT HESAPLAYICI DİŞ İŞLEMİ EKLEME -->
     <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
-        <h3 id="islem_formu_baslik" style="margin-top:0; color:#007bff;">Diş İşlemi Ekle</h3>
+        <h3 id="islem_formu_baslik" style="margin-top:0; color:#007bff;">Diş İşlemi & Ücreti Ekle</h3>
         <input type="text" id="dis_no_input" name="dis_no" placeholder="Diş Numarası (Yukarıdan Tıklayın veya Yazın)" required>
-        <select name="islem_turu" required>
-            <option value="">-- Yapılan İşlem / Tedavi --</option>
-            <option value="Kompozit Dolgu">Kompozit Dolgu</option>
-            <option value="Kanal Tedavisi">Kanal Tedavisi</option>
-            <option value="Diş Çekimi">Diş Çekimi</option>
-            <option value="Diş Taşı Temizliği">Diş Taşı Temizliği</option>
-            <option value="Porselen Kron Kaplama">Porselen Kron Kaplama</option>
-            <option value="İmplant">İmplant</option>
+        
+        <select id="islem_select" name="islem_turu" onchange="fiyatGetir()" required>
+            <option value="">-- Tarifeden Yapılan İşlemi Seçin --</option>
+            {% for t in tarifeler %}
+            <option value="{{ t['islem_adi'] }}" data-fiyat="{{ t['varsayilan_fiyat'] }}">{{ t['islem_adi'] }} ({{ t['varsayilan_fiyat'] }} TL)</option>
+            {% endfor %}
         </select>
-        <button type="submit">İşlemi Kaydet</button>
+        
+        <label style="font-size:12px; color:#666;">Uygulanacak Tutar (TL):</label>
+        <input type="number" id="ucret_input" name="ucret" placeholder="Ücret (TL)" required>
+
+        <button type="submit">İşlemi ve Ücreti Kaydet</button>
     </form>
 
     <h2>Uygulanan Diş Tedavileri</h2>
     <table>
-        <tr><th>Diş No</th><th>Tedavi</th><th>Eylem</th></tr>
+        <tr><th>Diş No</th><th>Tedavi</th><th>İşlem Tutarı</th><th>Eylem</th></tr>
         {% for i in islemler %}
         <tr>
-            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td>
+            <td><b>Diş #{{ i['dis_no'] }}</b></td>
+            <td>{{ i['islem_turu'] }}</td>
+            <td><b>{{ i['ucret'] or 0 }} TL</b></td>
             <td><a href="/islem-sil/{{ i['id'] }}/{{ hasta['id'] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
         </tr>
         {% endfor %}
@@ -693,7 +826,7 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
 <button class="print-btn" onclick="window.print()">🖨️ Sayfayı Yazdır / PDF İndir</button>
 
 <div class="header">
-    <h1 style="color: #007bff; margin: 0;">🦷 Klinik360</h1>
+    <h1 style="color: #007bff; margin: 0;">🦷 {{ ayar['klinik_adi'] }}</h1>
     <h2>DİŞ SAĞLIĞI TEDAVİ & REÇETE RAPORU</h2>
 </div>
 
@@ -710,9 +843,9 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
 
 <h3>Uygulanan Tedaviler</h3>
 <table>
-    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th></tr>
+    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th><th>Tutar</th></tr>
     {% for i in islemler %}
-    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td></tr>
+    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td><td>{{ i['ucret'] or 0 }} TL</td></tr>
     {% endfor %}
 </table>
 
@@ -749,7 +882,7 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
         <p><b>2. Curaprox Diş İpi & Fırçası</b></p>
     {% endif %}
     <br><br>
-    <p style="text-align:right;"><b>Hekim Kaşesi & İmza</b><br>Klinik360 Diş Polikliniği</p>
+    <p style="text-align:right;"><b>Hekim Kaşesi & İmza</b><br>{{ ayar['doktor_adi'] }}<br>{{ ayar['klinik_adi'] }}</p>
 </div>
 {% endif %}
 
@@ -782,12 +915,12 @@ HASTA_PROFIL_HTML = '''
 <body>
 <div class="container">
     <a href="/" style="background:#6c757d;color:white;padding:8px 12px;text-decoration:none;border-radius:6px;">⬅ Çıkış</a>
-    <h2 style="color:#007bff;">🦷 Klinik360 Hasta Bilgi Kartı</h2>
+    <h2 style="color:#007bff;">🦷 {{ ayar['klinik_adi'] }}</h2>
     <div class="card">
         <h3 style="margin-top:0;">Sayın {{ hasta['ad_soyad'] }}</h3>
         <p><b>TC No:</b> {{ hasta['tc_no'] or '-' }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }}</p>
-        <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
-        <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
+        <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }} {% if hasta['randevu_saati'] %}(Saat: {{ hasta['randevu_saati'] }}){% endif %}</span></p>
+        <p><b>👨‍⚕️ Hekim Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
     </div>
     <h3>🦷 Tedavileriniz</h3>
     {% if islemler %}
