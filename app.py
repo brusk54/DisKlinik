@@ -44,22 +44,27 @@ def init_db():
         )
     ''')
     
-    # Sütun migrasyon kontrolleri
-    sutunlar = [row[1] for row in cursor.execute("PRAGMA table_info(hastalar)").fetchall()]
-    if "tc_no" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN tc_no TEXT")
-    if "dogum_tarihi" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN dogum_tarihi TEXT")
-    if "randevu_tarihi" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_tarihi TEXT")
-    if "alerji" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN alerji TEXT")
-    if "ozel_not" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN ozet_not TEXT")
-    if "semptomlar" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN semptomlar TEXT")
-    if "anamnez" not in sutunlar:
-        cursor.execute("ALTER TABLE hastalar ADD COLUMN anamnez TEXT")
+    # Sütun kontrolü ve eksikse ekleme
+    cursor.execute("PRAGMA table_info(hastalar)")
+    sutunlar = [row[1] for row in cursor.fetchall()]
+    
+    yeni_sutunlar = {
+        "tc_no": "TEXT",
+        "dogum_tarihi": "TEXT",
+        "randevu_tarihi": "TEXT",
+        "alerji": "TEXT",
+        "ozel_not": "TEXT",
+        "semptomlar": "TEXT",
+        "anamnez": "TEXT",
+        "yas": "TEXT"
+    }
+    
+    for sutun, tip in yeni_sutunlar.items():
+        if sutun not in sutunlar:
+            try:
+                cursor.execute(f"ALTER TABLE hastalar ADD COLUMN {sutun} {tip}")
+            except Exception:
+                pass
         
     conn.commit()
     conn.close()
@@ -106,13 +111,8 @@ def doktor_panel():
     cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC")
     randevular = cursor.fetchall()
 
-    # Finans / Ciro Hesabı
-    cursor.execute("SELECT SUM(ucret) as toplam FROM dis_islemleri")
-    ciro_res = cursor.fetchone()
-    toplam_ciro = ciro_res['toplam'] if ciro_res and ciro_res['toplam'] else 0.0
-
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_ciro=toplam_ciro)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama)
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
@@ -212,11 +212,8 @@ def hasta_detay(hasta_id):
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
-    
-    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
-    
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
@@ -225,7 +222,7 @@ def dis_islem_ekle(hasta_id):
         
     dis_no = request.form.get('dis_no', '')
     islem_turu = request.form.get('islem_turu', '')
-    ucret = float(request.form.get('ucret', 0))
+    ucret = request.form.get('ucret', 0)
     
     conn = get_db()
     cursor = conn.cursor()
@@ -247,10 +244,8 @@ def hasta_rapor(hasta_id):
     islemler = cursor.fetchall()
     
     recete_secimi = request.args.get('recete', '')
-    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
-    
     conn.close()
-    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc, recete_secimi=recete_secimi)
+    return render_template_string(HASTA_RAPOR_HTML, hasta=hasta, islemler=islemler, recete_secimi=recete_secimi)
 
 @app.route('/hasta-giris', methods=['GET', 'POST'])
 def hasta_giris():
@@ -283,11 +278,10 @@ def hasta_profil():
     hasta = cursor.fetchone()
     cursor.execute("SELECT * FROM dis_islemleri WHERE hasta_id = ?", (hasta_id,))
     islemler = cursor.fetchall()
-    toplam_borc = sum([i['ucret'] for i in islemler if i['ucret']])
     conn.close()
-    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler, toplam_borc=toplam_borc)
+    return render_template_string(HASTA_PROFIL_HTML, hasta=hasta, islemler=islemler)
 
-# --- MODERN HTML TEMPLATES ---
+# --- HTML TEMPLATES ---
 
 LOGO_HTML = '''
 <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: linear-gradient(135deg, #007bff, #00d2ff); padding: 12px 24px; border-radius: 50px; color: white; box-shadow: 0 4px 15px rgba(0,123,255,0.3); margin-bottom: 15px;">
@@ -309,7 +303,7 @@ body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 
 <body>
     <div class="box">
         ''' + LOGO_HTML + '''
-        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Gelişmiş SaaS Diş Klinik Yönetim Sistemi</p>
+        <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Diş Klinik Yönetim Sistemi</p>
         <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
@@ -343,7 +337,6 @@ DOKTOR_PANEL_HTML = '''
 body{font-family:Arial;background:#f4f7f6;padding:10px;color:#333}
 .container{max-width:1000px;margin:auto;background:white;padding:20px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.08)}
 .header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #eee;padding-bottom:10px;margin-bottom:20px}
-.finans-card{background:linear-gradient(135deg, #28a745, #20c997); color:white; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;}
 .takvim-box{background:#e3f2fd;padding:15px;border-radius:8px;margin-bottom:20px;border-left:5px solid #007bff}
 form{background:#e9ecef;padding:20px;border-radius:8px;margin-bottom:20px}
 input,select,textarea{width:100%;padding:10px;margin:8px 0;border:1px solid #ccc;border-radius:5px;box-sizing:border-box}
@@ -360,16 +353,8 @@ th{background:#007bff;color:white}
 <body>
 <div class="container">
     <div class="header">
-        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| Profesyonel Doktor Paneli</span></div>
+        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| Doktor Paneli</span></div>
         <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
-    </div>
-
-    <div class="finans-card">
-        <div>
-            <h3 style="margin:0; font-size:16px;">💰 Klinik Kasa / Toplam Ciro</h3>
-            <p style="margin:5px 0 0 0; font-size:24px; font-weight:bold;">{{ "%.2f"|format(toplam_ciro) }} TL</p>
-        </div>
-        <div style="font-size: 36px;">📊</div>
     </div>
 
     <div class="takvim-box">
@@ -505,8 +490,6 @@ th{background:#28a745;color:white}
         <p><b>Semptomlar:</b> {{ hasta['semptomlar'] or '' }}</p>
         <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
         <p><b>Alerji:</b> <span style="color:red; font-weight:bold;">{{ hasta['alerji'] or 'Yok' }}</span></p>
-        <hr style="border:0; border-top:1px solid #ccc;">
-        <p style="font-size:16px; margin:0;"><b>Toplam Tedavi Borcu:</b> <span style="color:#28a745; font-weight:bold;">{{ "%.2f"|format(toplam_borc) }} TL</span></p>
     </div>
 
     <form action="/dis_islem_ekle/{{ hasta['id'] }}" method="POST">
@@ -540,16 +523,15 @@ th{background:#28a745;color:white}
             <option value="Porselen Kron Kaplama">Porselen Kron Kaplama</option>
             <option value="İmplant">İmplant</option>
         </select>
-        <input type="number" step="0.01" name="ucret" placeholder="İşlem Ücreti (TL)" required>
         <button type="submit">İşlemi Kaydet</button>
     </form>
 
     <h2>Uygulanan Diş Tedavileri</h2>
     <table>
-        <tr><th>Diş No</th><th>Tedavi</th><th>Ücret</th><th>Eylem</th></tr>
+        <tr><th>Diş No</th><th>Tedavi</th><th>Eylem</th></tr>
         {% for i in islemler %}
         <tr>
-            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td>
+            <td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td>
             <td><a href="/islem-sil/{{ i['id'] }}/{{ hasta['id'] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
         </tr>
         {% endfor %}
@@ -590,13 +572,12 @@ th,td{border:1px solid #333;padding:8px;text-align:left}th{background:#eee}
     <p><b>Doktor Notu:</b> {{ hasta['ozel_not'] or '' }}</p>
 </div>
 
-<h3>Uygulanan Tedaviler & Ücretler</h3>
+<h3>Uygulanan Tedaviler</h3>
 <table>
-    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th><th>Ücret</th></tr>
+    <tr><th>Diş No (ISO)</th><th>Tedavi Açıklaması</th></tr>
     {% for i in islemler %}
-    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td></tr>
+    <tr><td>Diş #{{ i['dis_no'] }}</td><td>{{ i['islem_turu'] }}</td></tr>
     {% endfor %}
-    <tr><td colspan="2" style="text-align:right;"><b>Toplam Borç / Tutar:</b></td><td><b>{{ "%.2f"|format(toplam_borc) }} TL</b></td></tr>
 </table>
 
 <div class="no-print" style="margin-top:25px;">
@@ -659,14 +640,13 @@ HASTA_PROFIL_HTML = '''
         <p><b>TC No:</b> {{ hasta['tc_no'] or '-' }} | <b>Doğum Tarihi:</b> {{ hasta['dogum_tarihi'] or '-' }}</p>
         <p><b>🗓 Yaklaşan Randevunuz:</b> <span style="color:#d9534f;font-weight:bold;">{{ hasta['randevu_tarihi'] or 'Yok' }}</span></p>
         <p><b>👨‍⚕️ Doktor Notu:</b> {{ hasta['ozel_not'] or 'Yok' }}</p>
-        <p style="font-size:16px;"><b>Toplam Borcunuz:</b> <span style="color:#28a745; font-weight:bold;">{{ "%.2f"|format(toplam_borc) }} TL</span></p>
     </div>
     <h3>🦷 Tedavileriniz</h3>
     {% if islemler %}
     <table>
-        <tr><th>Diş No</th><th>Yapılan Tedavi</th><th>Ücret</th></tr>
+        <tr><th>Diş No</th><th>Yapılan Tedavi</th></tr>
         {% for i in islemler %}
-        <tr><td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td><td>{{ "%.2f"|format(i['ucret']) }} TL</td></tr>
+        <tr><td><b>Diş #{{ i['dis_no'] }}</b></td><td>{{ i['islem_turu'] }}</td></tr>
         {% endfor %}
     </table>
     {% else %}
