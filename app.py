@@ -494,7 +494,7 @@ DOKTOR_GIRIS_HTML = '''
 </body></html>
 '''
 
-DOKTOR_PANEL_HTML = '''
+DOKTOR_PANEL_HTML = (
 <!DOCTYPE html>
 <html lang="tr">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Doktor Paneli - Klinik360</title>
@@ -949,4 +949,18 @@ HASTA_PROFIL_HTML = '''
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', po
+    import sqlite3
+
+# Veritabanında klinik_id sütunu yoksa otomatik ekler
+def check_and_add_column():
+    conn = sqlite3.connect('klinik.db')
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT klinik_id FROM hastalar LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN klinik_id INTEGER;")
+        conn.commit()
+    conn.close()
+
+check_and_add_column()
