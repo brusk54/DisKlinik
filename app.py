@@ -524,4 +524,39 @@ def check_and_database_setup():
             
         conn.close()
 
+import sqlite3
+import os
+
+# Veritabani ve tablo/sutunlarin guvenli kurulumu
+def check_and_database_setup():
+    db_path = 'klinik.db'
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Hastalar tablosu yoksa tum sutunlariyla birlikte olustur
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS hastalar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ad_soyad TEXT,
+            telefon TEXT,
+            randevu_tarihi TEXT,
+            randevu_saati TEXT,
+            klinik_id INTEGER
+        )
+    ''')
+    
+    # Eger tablo onceden varsa ve bu sutunlar eksikse Guvenli bir sekilde ekle
+    cursor.execute("PRAGMA table_info(hastalar);")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'klinik_id' not in columns:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN klinik_id INTEGER;")
+    if 'randevu_tarihi' not in columns:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_tarihi TEXT;")
+    if 'randevu_saati' not in columns:
+        cursor.execute("ALTER TABLE hastalar ADD COLUMN randevu_saati TEXT;")
+        
+    conn.commit()
+    conn.close()
+
 check_and_database_setup()
