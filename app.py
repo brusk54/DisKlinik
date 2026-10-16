@@ -11,6 +11,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 DOKTOR_SIFRE = "1234"
+SEKRETER_SIFRE = "5678"
 
 def get_db():
     conn = sqlite3.connect('klinik.db')
@@ -137,7 +138,10 @@ def doktor_giris():
     if request.method == 'POST':
         sifre = request.form.get('sifre')
         if sifre == DOKTOR_SIFRE:
-            session['doktor_giris'] = True
+            session['kullanici_rolu'] = 'doktor'
+            return redirect(url_for('doktor_panel'))
+        elif sifre == SEKRETER_SIFRE:
+            session['kullanici_rolu'] = 'sekreter'
             return redirect(url_for('doktor_panel'))
         else:
             hata = "Hatalı şifre!"
@@ -145,12 +149,13 @@ def doktor_giris():
 
 @app.route('/doktor-cikis')
 def doktor_cikis():
-    session.pop('doktor_giris', None)
+    session.pop('kullanici_rolu', None)
     return redirect(url_for('index'))
 
 @app.route('/doktor-panel')
 def doktor_panel():
-    if not session.get('doktor_giris'):
+    rol = session.get('kullanici_rolu')
+    if not rol:
         return redirect(url_for('doktor_giris'))
         
     conn = get_db()
@@ -167,7 +172,6 @@ def doktor_panel():
         
     hastalar = cursor.fetchall()
 
-    # Randevu Saatli Takvim
     cursor.execute("SELECT id, ad_soyad, telefon, randevu_tarihi, randevu_saati FROM hastalar WHERE randevu_tarihi IS NOT NULL AND randevu_tarihi != '' ORDER BY randevu_tarihi ASC, randevu_saati ASC")
     randevular = cursor.fetchall()
 
@@ -184,12 +188,12 @@ def doktor_panel():
     tarifeler = cursor.fetchall()
 
     conn.close()
-    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_hasta=toplam_hasta, toplam_randevu=toplam_randevu, toplam_islem=toplam_islem, ayar=ayar, tarifeler=tarifeler)
+    return render_template_string(DOKTOR_PANEL_HTML, hastalar=hastalar, randevular=randevular, arama=arama, toplam_hasta=toplam_hasta, toplam_randevu=toplam_randevu, toplam_islem=toplam_islem, ayar=ayar, tarifeler=tarifeler, rol=rol)
 
 @app.route('/fiyat-guncelle', methods=['POST'])
 def fiyat_guncelle():
-    if not session.get('doktor_giris'):
-        return redirect(url_for('doktor_giris'))
+    if session.get('kullanici_rolu') != 'doktor':
+        return redirect(url_for('doktor_panel'))
         
     conn = get_db()
     cursor = conn.cursor()
@@ -205,7 +209,7 @@ def fiyat_guncelle():
 
 @app.route('/ekle', methods=['POST'])
 def ekle():
-    if not session.get('doktor_giris'):
+    if not session.get('kullanici_rolu'):
         return redirect(url_for('doktor_giris'))
         
     ad_soyad = request.form.get('ad_soyad', '')
@@ -236,7 +240,7 @@ def ekle():
 
 @app.route('/hasta-duzenle/<int:hasta_id>', methods=['GET', 'POST'])
 def hasta_duzenle(hasta_id):
-    if not session.get('doktor_giris'):
+    if not session.get('kullanici_rolu'):
         return redirect(url_for('doktor_giris'))
         
     conn = get_db()
@@ -269,8 +273,8 @@ def hasta_duzenle(hasta_id):
 
 @app.route('/hasta-sil/<int:hasta_id>')
 def hasta_sil(hasta_id):
-    if not session.get('doktor_giris'):
-        return redirect(url_for('doktor_giris'))
+    if session.get('kullanici_rolu') != 'doktor':
+        return redirect(url_for('doktor_panel'))
         
     conn = get_db()
     cursor = conn.cursor()
@@ -283,8 +287,8 @@ def hasta_sil(hasta_id):
 
 @app.route('/islem-sil/<int:islem_id>/<int:hasta_id>')
 def islem_sil(islem_id, hasta_id):
-    if not session.get('doktor_giris'):
-        return redirect(url_for('doktor_giris'))
+    if session.get('kullanici_rolu') != 'doktor':
+        return redirect(url_for('hasta_detay', hasta_id=hasta_id))
         
     conn = get_db()
     cursor = conn.cursor()
@@ -295,8 +299,8 @@ def islem_sil(islem_id, hasta_id):
 
 @app.route('/foto-sil/<int:foto_id>/<int:hasta_id>')
 def foto_sil(foto_id, hasta_id):
-    if not session.get('doktor_giris'):
-        return redirect(url_for('doktor_giris'))
+    if session.get('kullanici_rolu') != 'doktor':
+        return redirect(url_for('hasta_detay', hasta_id=hasta_id))
         
     conn = get_db()
     cursor = conn.cursor()
@@ -313,7 +317,8 @@ def foto_sil(foto_id, hasta_id):
 
 @app.route('/hasta-detay/<int:hasta_id>')
 def hasta_detay(hasta_id):
-    if not session.get('doktor_giris'):
+    rol = session.get('kullanici_rolu')
+    if not rol:
         return redirect(url_for('doktor_giris'))
         
     conn = get_db()
@@ -329,11 +334,11 @@ def hasta_detay(hasta_id):
     cursor.execute("SELECT * FROM fiyat_tarifesi ORDER BY islem_adi ASC")
     tarifeler = cursor.fetchall()
     conn.close()
-    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, ayar=ayar, tarifeler=tarifeler)
+    return render_template_string(HASTA_DETAY_HTML, hasta=hasta, islemler=islemler, fotolar=fotolar, ayar=ayar, tarifeler=tarifeler, rol=rol)
 
 @app.route('/dis_islem_ekle/<int:hasta_id>', methods=['POST'])
 def dis_islem_ekle(hasta_id):
-    if not session.get('doktor_giris'):
+    if not session.get('kullanici_rolu'):
         return redirect(url_for('doktor_giris'))
         
     dis_no = request.form.get('dis_no', '')
@@ -352,7 +357,7 @@ def dis_islem_ekle(hasta_id):
 
 @app.route('/foto-ekle/<int:hasta_id>', methods=['POST'])
 def foto_ekle(hasta_id):
-    if not session.get('doktor_giris'):
+    if not session.get('kullanici_rolu'):
         return redirect(url_for('doktor_giris'))
         
     tip = request.form.get('tip', 'once')
@@ -448,7 +453,7 @@ body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 
     <div class="box">
         ''' + LOGO_HTML + '''
         <p style="color: #666; margin-bottom: 25px; font-size: 15px;">Profesyonel Diş Klinik Yönetim Sistemi</p>
-        <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Doktor / Yönetici Girişi</a>
+        <a href="/doktor-giris" class="btn btn-doktor">👩‍⚕️ Personel / Yönetici Girişi</a>
         <a href="/hasta-giris" class="btn btn-hasta">📱 Hasta Randevu & Takip</a>
     </div>
 </body></html>
@@ -457,15 +462,16 @@ body { font-family: Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 
 DOKTOR_GIRIS_HTML = '''
 <!DOCTYPE html>
 <html lang="tr">
-<head><meta charset="UTF-8"><title>Doktor Girişi</title>
+<head><meta charset="UTF-8"><title>Personel Girişi</title>
 <style>body{font-family:Arial;background:#e9ecef;padding:20px;text-align:center}.box{max-width:380px;margin:80px auto;background:white;padding:30px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1)}input{width:100%;padding:12px;margin:15px 0;border:1px solid #ccc;border-radius:6px;text-align:center;box-sizing:border-box;font-size:16px}button{width:100%;padding:12px;background:#007bff;color:white;border:none;border-radius:6px;cursor:pointer;font-size:16px}</style></head>
 <body>
 <div class="box">
     ''' + LOGO_HTML + '''
-    <h2>Doktor Girişi</h2>
+    <h2>Klinik Personel Girişi</h2>
+    <p style="font-size:12px; color:#666;">Doktor Şifresi: <b>1234</b> | Sekreter Şifresi: <b>5678</b></p>
     {% if hata %}<p style="color:red; font-size:14px;">{{ hata }}</p>{% endif %}
     <form method="POST">
-        <input type="password" name="sifre" placeholder="Şifre (1234)" required>
+        <input type="password" name="sifre" placeholder="Personel Şifresi" required>
         <button type="submit">Giriş Yap</button>
     </form>
     <br><a href="/" style="color:#666;text-decoration:none;font-size:14px;">⬅ Ana Sayfa</a>
@@ -496,13 +502,18 @@ table{width:100%;border-collapse:collapse;margin-top:15px}
 th,td{border:1px solid #ddd;padding:10px;text-align:left;font-size:13px}
 th{background:#007bff;color:white}
 .btn-sm{padding:5px 8px;text-decoration:none;border-radius:4px;font-size:11px;display:inline-block;margin:2px}
-.btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
+.btn-info{background:#17a2b8;color:white}.btn-wa{background:#25d366;color:white}.btn-sms{background:#6f42c1;color:white}.btn-edit{background:#ffc107;color:#000}.btn-del{background:#dc3545;color:white}
 .badge-danger{background:#dc3545; color:white; padding:2px 6px; border-radius:4px; font-size:11px;}
+.badge-role{background:#17a2b8; color:white; padding:3px 8px; border-radius:12px; font-size:12px; font-weight:bold;}
 </style></head>
 <body>
 <div class="container">
     <div class="header">
-        <div><span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> <span style="font-size: 14px; color: #666;">| {{ ayar['doktor_adi'] }}</span></div>
+        <div>
+            <span style="font-size: 22px; font-weight: bold; color: #007bff;">🦷 Klinik360</span> 
+            <span style="font-size: 14px; color: #666;">| {{ ayar['doktor_adi'] }}</span>
+            <span class="badge-role">{{ '👨‍⚕️ Doktor Yetkisi' if rol == 'doktor' else '📋 Sekreter Yetkisi' }}</span>
+        </div>
         <div><a href="/doktor-cikis" style="background:#dc3545;color:white;padding:8px 15px;text-decoration:none;border-radius:6px;font-size:14px;">Çıkış Yap</a></div>
     </div>
 
@@ -540,7 +551,8 @@ th{background:#007bff;color:white}
         {% endif %}
     </div>
 
-    <!-- DİŞ TEDAVİSİ FİYAT TARİFESİ DÜZENLEME -->
+    {% if rol == 'doktor' %}
+    <!-- DİŞ TEDAVİSİ FİYAT TARİFESİ DÜZENLEME (SADECE DOKTOR) -->
     <div class="tarife-box">
         <h3 style="margin-top:0; color:#856404;">📋 Kliniğe Özel Diş Tedavisi Fiyat Tarifesi</h3>
         <form action="/fiyat-guncelle" method="POST" style="background:transparent; padding:0; margin:0;">
@@ -555,6 +567,7 @@ th{background:#007bff;color:white}
             <button type="submit" style="margin-top:10px; background:#ffc107; color:#333; font-weight:bold;">Fiyat Tarifesini Güncelle</button>
         </form>
     </div>
+    {% endif %}
 
     <form action="/ekle" method="POST">
         <h3 style="margin-top:0; color:#007bff;">Yeni Hasta Kaydı & Tıbbi Anamnez</h3>
@@ -610,9 +623,9 @@ th{background:#007bff;color:white}
         <input type="text" name="arama" placeholder="🔍 İsim, telefon veya TC No ile ara..." value="{{ arama }}">
     </form>
 
-    <h2>Kayıtlı Hastalar & WhatsApp Şablonları</h2>
+    <h2>Kayıtlı Hastalar & İletişim Şablonları</h2>
     <table>
-        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Kritik Anamnez & Notlar</th><th>Randevu</th><th>Hızlı WhatsApp Mesajları</th><th>İşlemler</th></tr>
+        <tr><th>Kimlik & Ad Soyad</th><th>İletişim & TC</th><th>Kritik Anamnez & Notlar</th><th>Randevu</th><th>WhatsApp & SMS Mesajları</th><th>İşlemler</th></tr>
         {% for h in hastalar %}
         <tr>
             <td><b>{{ h['ad_soyad'] }}</b><br><small>Doğum: {{ h['dogum_tarihi'] or '-' }} (Yaş: {{ h['yas'] or '-' }})</small></td>
@@ -628,13 +641,16 @@ th{background:#007bff;color:white}
             <td>{{ h['randevu_tarihi'] or '' }}<br><small>{{ h['randevu_saati'] or '' }}</small></td>
             <td>
                 <!-- WHATSAPP HAZIR ŞABLONLARI -->
-                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h['telefon'] }}?text=Sayin%20{{ h['ad_soyad'] }},%20{{ h['randevu_tarihi'] }}%20günü%20saat%20{{ h['randevu_saati'] or '' }}%20klinik%20randevunuzu%20hatirlatiriz.%20{{ ayar['klinik_adi'] }}%20-%20{{ ayar['doktor_adi'] }}" target="_blank">📲 Randevu Hatırlat</a><br>
-                <a class="btn-sm btn-wa" style="background:#007bff;" href="https://wa.me/9{{ h['telefon'] }}?text=Sayin%20{{ h['ad_soyad'] }},%20bugün%20gerçekleştirdiğimiz%20diş%20tedaviniz%20sonrası%20geçmiş%20olsun%20dileriz.%20Ağrı%20veya%20sorunuz%20olursa%20bize%20ulaşabilirsiniz.%20{{ ayar['doktor_adi'] }}" target="_blank">🩹 Geçmiş Olsun</a>
+                <a class="btn-sm btn-wa" href="https://wa.me/9{{ h['telefon'] }}?text=Sayin%20{{ h['ad_soyad'] }},%20{{ h['randevu_tarihi'] }}%20günü%20saat%20{{ h['randevu_saati'] or '' }}%20klinik%20randevunuzu%20hatirlatiriz.%20{{ ayar['klinik_adi'] }}%20-%20{{ ayar['doktor_adi'] }}" target="_blank">📲 WhatsApp Hatırlat</a><br>
+                <!-- DOĞRUDAN SMS ŞABLONU -->
+                <a class="btn-sm btn-sms" href="sms:{{ h['telefon'] }}?body=Sayin%20{{ h['ad_soyad'] }},%20{{ h['randevu_tarihi'] }}%20saat%20{{ h['randevu_saati'] or '' }}%20klinik%20randevunuzu%20hatirlatiriz.%20{{ ayar['klinik_adi'] }}">✉️ Başlıklı SMS Gönder</a>
             </td>
             <td>
                 <a class="btn-sm btn-info" href="/hasta-detay/{{ h['id'] }}">Diş Kartı</a>
                 <a class="btn-sm btn-edit" href="/hasta-duzenle/{{ h['id'] }}">Düzenle</a>
+                {% if rol == 'doktor' %}
                 <a class="btn-sm btn-del" href="/hasta-sil/{{ h['id'] }}" onclick="return confirm('Silmek istediğinize emin misiniz?')">Sil</a>
+                {% endif %}
             </td>
         </tr>
         {% endfor %}
@@ -760,13 +776,15 @@ function fiyatGetir() {
 
     <h2>Uygulanan Diş Tedavileri</h2>
     <table>
-        <tr><th>Diş No</th><th>Tedavi</th><th>İşlem Tutarı</th><th>Eylem</th></tr>
+        <tr><th>Diş No</th><th>Tedavi</th><th>İşlem Tutarı</th>{% if rol == 'doktor' %}<th>Eylem</th>{% endif %}</tr>
         {% for i in islemler %}
         <tr>
             <td><b>Diş #{{ i['dis_no'] }}</b></td>
             <td>{{ i['islem_turu'] }}</td>
             <td><b>{{ i['ucret'] or 0 }} TL</b></td>
+            {% if rol == 'doktor' %}
             <td><a href="/islem-sil/{{ i['id'] }}/{{ hasta['id'] }}" style="color:red;text-decoration:none;" onclick="return confirm('Silmek istediğinize emin misiniz?')">🗑️ Sil</a></td>
+            {% endif %}
         </tr>
         {% endfor %}
     </table>
@@ -795,7 +813,9 @@ function fiyatGetir() {
                 <img src="{{ url_for('static', filename='uploads/' + f['dosya_adi']) }}" alt="Fotoğraf">
             </a>
             <br>
+            {% if rol == 'doktor' %}
             <a href="/foto-sil/{{ f['id'] }}/{{ hasta['id'] }}" style="color:red; font-size:12px; text-decoration:none;" onclick="return confirm('Fotoğrafı silmek istiyor musunuz?')">🗑️ Sil</a>
+            {% endif %}
         </div>
         {% else %}
         <p style="color:gray;">Henüz yüklenmiş fotoğraf yok.</p>
