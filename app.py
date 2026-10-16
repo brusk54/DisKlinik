@@ -4,13 +4,13 @@ from flask import Flask, render_template_string, request, redirect, session, url
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.secret_key = 'dis_klinik_gizli_anahtar'
+app.secret_key = 'dis_klinik_gizli_anahtar_2026'
 
 UPLOAD_FOLDER = 'static/uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Veritabani ve tablo/sutunlarin guvenli kurulumu
+# Veritabani ve tablo/sutunlarin guvenli otomatik kurulumu
 def check_and_database_setup():
     db_path = 'klinik.db'
     conn = sqlite3.connect(db_path)
@@ -92,7 +92,7 @@ def doktor_giris():
     <html lang="tr">
     <head>
         <meta charset="UTF-8">
-        <title>Doktor Girişi</title>
+        <title>Diş Klinik - Doktor Girişi</title>
         <style>
             body { font-family: Arial, sans-serif; background: #f4f7f6; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
             .login-box { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 300px; text-align: center; }
@@ -283,7 +283,6 @@ def foto_ekle(hasta_id):
         file = request.files['foto']
         if file.filename != '':
             filename = secure_filename(file.filename)
-            # Benzersiz isim olusturmak icin hasta id ekleyelim
             unique_filename = f"{hasta_id}_{filename}"
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], unique_filename))
             
